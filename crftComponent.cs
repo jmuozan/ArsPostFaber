@@ -22,7 +22,7 @@ namespace MyNamespace
         private Task _captureTask;
         private Process _avfProcess;
         private string _tempImagePath;
-        private readonly int _refreshInterval = 33; // in milliseconds (30 fps)
+        private readonly int _refreshInterval = 100; // in milliseconds - lower value may overload imagesnap
 
         /// <summary>
         /// Initializes a new instance of the WebcamComponent class.
@@ -43,7 +43,7 @@ namespace MyNamespace
         protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
         {
             pManager.AddBooleanParameter("Enable", "E", "Enable/disable webcam", GH_ParamAccess.item, false);
-            pManager.AddIntegerParameter("Device", "D", "Webcam device index", GH_ParamAccess.item, 0);
+            pManager.AddIntegerParameter("Device", "D", "Webcam device index (FaceTime=1, OBS=0)", GH_ParamAccess.item, 1);
         }
 
         /// <summary>
@@ -142,13 +142,18 @@ namespace MyNamespace
                 string[] lines = deviceList.Split('\n');
                 List<string> cameraNames = new List<string>();
                 
+                // First show all found cameras in runtime messages
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Available cameras:");
+                int camIndex = 0;
+                
                 foreach (string line in lines)
                 {
                     if (line.StartsWith("=>"))
                     {
                         string cameraName = line.Substring(3).Trim();
                         cameraNames.Add(cameraName);
-                        AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Found camera: {cameraName}");
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Camera {camIndex}: {cameraName}");
+                        camIndex++;
                     }
                 }
                 
@@ -159,18 +164,52 @@ namespace MyNamespace
                     return;
                 }
                 
-                // Adjust device index if out of range
+                // Find built-in webcam by name
+                int builtInIndex = -1;
+                for (int i = 0; i < cameraNames.Count; i++)
+                {
+                    string name = cameraNames[i].ToLower();
+                    if (name.Contains("facetime") || name.Contains("built-in") || name.Contains("macbook") || name.Contains("integrated"))
+                    {
+                        builtInIndex = i;
+                        break;
+                    }
+                }
+                
+                // Use deviceIndex from input if valid, otherwise try to use built-in camera
                 if (_deviceIndex < 0 || _deviceIndex >= cameraNames.Count)
                 {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Device index {_deviceIndex} out of range. Using camera 0.");
+                    if (builtInIndex >= 0)
+                    {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Device index {_deviceIndex} out of range. Using built-in camera at index {builtInIndex}.");
+                        _deviceIndex = builtInIndex;
+                    }
+                    else
+                    {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Device index {_deviceIndex} out of range and no built-in camera found. Using camera 0.");
+                        _deviceIndex = 0;
+                    }
+                }
+                
+                // Map the logical device indexes to actual camera names
+                // This ensures the user input (0, 1, 2) maps correctly to the device they want
+                // List all available cameras for user reference
+                string cameraList = "Available cameras:\n";
+                for (int i = 0; i < cameraNames.Count; i++)
+                {
+                    cameraList += $"{i}: {cameraNames[i]}\n";
+                }
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, cameraList);
+                
+                // Make sure device index is valid
+                if (_deviceIndex < 0 || _deviceIndex >= cameraNames.Count)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Device index {_deviceIndex} out of range. Using camera 0 instead.");
                     _deviceIndex = 0;
                 }
                 
                 string selectedCamera = cameraNames[_deviceIndex];
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Using camera: {selectedCamera}");
-                
-                // Start continuous capture process (single long-running process)
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Starting continuous capture...");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Using camera {_deviceIndex}: {selectedCamera}");
                 
                 // Start continuous capture with direct method
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Starting continuous capture...");
@@ -181,13 +220,40 @@ namespace MyNamespace
                 {
                     try
                     {
-                        // Capture a new frame directly
+                                // Capture a new frame directly
                         Process captureProcess = new Process();
                         captureProcess.StartInfo.FileName = "imagesnap";
-                        captureProcess.StartInfo.Arguments = $"-d \"{selectedCamera}\" \"{_tempImagePath}\"";
+                        
+                        // Force FaceTime camera by actual name when deviceIndex = 1
+                        string deviceArg;
+                        if (_deviceIndex == 1)
+                        {
+                            deviceArg = "-d \"Càmera FaceTime HD\"";
+                        }
+                        else if (_deviceIndex == 0)
+                        {
+                            deviceArg = "-d \"OBS Virtual Camera\"";
+                        }
+                        else if (_deviceIndex == 2)
+                        {
+                            deviceArg = "-d \"Càmera del dispositiu \\\"Jorgei Munious\\\"\"";
+                        }
+                        else
+                        {
+                            // Fallback to name-based selection
+                            deviceArg = $"-d \"{selectedCamera}\"";
+                        }
+                        
+                        captureProcess.StartInfo.Arguments = $"{deviceArg} \"{_tempImagePath}\"";
                         captureProcess.StartInfo.UseShellExecute = false;
                         captureProcess.StartInfo.CreateNoWindow = true;
                         captureProcess.StartInfo.WorkingDirectory = System.IO.Path.GetTempPath();
+                        
+                        // Debug output to see the full command
+                        string fullCommand = $"imagesnap {captureProcess.StartInfo.Arguments}";
+                        Debug.WriteLine($"Running: {fullCommand}");
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Command: {fullCommand}");
+                        
                         captureProcess.Start();
                         
                         // Wait for imagesnap to finish
@@ -307,18 +373,8 @@ namespace MyNamespace
                 _isRunning = false;
                 _hasCapturedFrame = false;
                 
-                // Clean up temporary files
-                try
-                {
-                    if (System.IO.File.Exists(_tempImagePath))
-                    {
-                        System.IO.File.Delete(_tempImagePath);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine("Error cleaning up temporary files: " + ex.Message);
-                }
+                        // We'll keep the temp file to avoid disk I/O overhead
+                // This helps with performance
             }
         }
 
@@ -381,10 +437,11 @@ namespace MyNamespace
 
     public class WebcamComponentAttributes : Grasshopper.Kernel.Attributes.GH_ComponentAttributes
     {
-        private WebcamComponent Owner;
+        private new readonly WebcamComponent Owner;
         private RectangleF PreviewBounds;
-        private const int PreviewWidth = 320;  // Default width of preview
-        private const int PreviewHeight = 240; // Default height of preview
+        private RectangleF ComponentBounds;
+        private const int PreviewWidth = 320;  // Preview width
+        private const int PreviewHeight = 240; // Preview height
 
         public WebcamComponentAttributes(WebcamComponent owner) : base(owner)
         {
@@ -393,34 +450,49 @@ namespace MyNamespace
 
         protected override void Layout()
         {
+            // First calculate the standard component layout
             base.Layout();
-
-            // Define a rectangle for the video preview below the standard component UI
+            
+            // Get the standard component bounds
             Rectangle baseRectangle = GH_Convert.ToRectangle(Bounds);
             
-            // Add space for the preview area
+            // Remember the component area for rendering purposes
+            ComponentBounds = new RectangleF(
+                baseRectangle.X, 
+                baseRectangle.Y, 
+                baseRectangle.Width, 
+                baseRectangle.Height
+            );
+            
+            // Determine width to fit the preview centered
+            int totalWidth = Math.Max(baseRectangle.Width, PreviewWidth + 20);
+            
+            // Add space for the preview below the standard component UI
+            baseRectangle.Width = totalWidth;
             baseRectangle.Height += PreviewHeight + 10;
-
-            // Calculate the preview rectangle
+            
+            // Calculate preview rectangle - centered horizontally
             PreviewBounds = new RectangleF(
-                baseRectangle.X,
-                baseRectangle.Y + baseRectangle.Height - PreviewHeight - 5,
+                baseRectangle.X + (totalWidth - PreviewWidth) / 2, // Center horizontally
+                ComponentBounds.Bottom + 5, // Position below component area
                 PreviewWidth,
                 PreviewHeight
             );
-
+            
             Bounds = baseRectangle;
         }
 
         protected override void Render(GH_Canvas canvas, Graphics graphics, GH_CanvasChannel channel)
         {
             base.Render(canvas, graphics, channel);
-
+            
+            // Only draw our custom preview in the Objects channel
             if (channel == GH_CanvasChannel.Objects)
             {
                 // Draw border for preview area
                 graphics.DrawRectangle(Pens.DarkGray, PreviewBounds.X, PreviewBounds.Y, PreviewBounds.Width, PreviewBounds.Height);
-
+                
+                // Draw the video frame
                 Bitmap frame = null;
                 lock (Owner)
                 {
@@ -439,6 +511,25 @@ namespace MyNamespace
                         graphics.DrawString("No webcam feed available", GH_FontServer.Standard, Brushes.DarkGray, PreviewBounds, format);
                     }
                 }
+                
+                // Optionally draw component name centered if needed - uncomment if necessary
+                /*
+                // Component name area is in the upper part of component
+                RectangleF nameRect = new RectangleF(
+                    ComponentBounds.Left, 
+                    ComponentBounds.Top, 
+                    ComponentBounds.Width, 
+                    24 // Height for name
+                );
+                
+                // Draw centered name
+                StringFormat componentNameFormat = new StringFormat
+                {
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center
+                };
+                graphics.DrawString(Owner.NickName, GH_FontServer.StandardBold, Brushes.Black, nameRect, componentNameFormat);
+                */
             }
         }
     }
