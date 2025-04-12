@@ -512,8 +512,40 @@ namespace MyNamespace
                     if (Owner._currentFrame != null)
                     {
                         frame = Owner._currentFrame;
-                        // Draw the video frame
-                        graphics.DrawImage(frame, PreviewBounds);
+                        
+                        // Calculate proportional dimensions to maintain aspect ratio
+                        float frameRatio = (float)frame.Width / frame.Height;
+                        float previewRatio = PreviewBounds.Width / PreviewBounds.Height;
+                        
+                        RectangleF targetRect;
+                        
+                        if (frameRatio > previewRatio)
+                        {
+                            // Image is wider than preview area - fit to width
+                            float targetHeight = PreviewBounds.Width / frameRatio;
+                            float yOffset = (PreviewBounds.Height - targetHeight) / 2;
+                            targetRect = new RectangleF(
+                                PreviewBounds.X,
+                                PreviewBounds.Y + yOffset,
+                                PreviewBounds.Width,
+                                targetHeight
+                            );
+                        }
+                        else
+                        {
+                            // Image is taller than preview area - fit to height
+                            float targetWidth = PreviewBounds.Height * frameRatio;
+                            float xOffset = (PreviewBounds.Width - targetWidth) / 2;
+                            targetRect = new RectangleF(
+                                PreviewBounds.X + xOffset,
+                                PreviewBounds.Y,
+                                targetWidth,
+                                PreviewBounds.Height
+                            );
+                        }
+                        
+                        // Draw the video frame with proper aspect ratio
+                        graphics.DrawImage(frame, targetRect);
                     }
                     else
                     {
