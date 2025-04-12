@@ -28,7 +28,7 @@ namespace MyNamespace
         /// Initializes a new instance of the WebcamComponent class.
         /// </summary>
         public WebcamComponent()
-          : base("Webcam", "Cam",
+          : base("Webcam", "", // Empty name and nickname to avoid text display
               "Captures and displays webcam video feed",
               "Display", "Preview")
         {
@@ -425,6 +425,14 @@ namespace MyNamespace
                 return null;
             }
         }
+        
+        public override void AppendAdditionalMenuItems(ToolStripDropDown menu)
+        {
+            base.AppendAdditionalMenuItems(menu);
+            // This ensures the component has the standard context menu
+        }
+        
+        public override GH_Exposure Exposure => GH_Exposure.primary;
 
         /// <summary>
         /// Gets the unique ID for this component. Do not change this ID after release.
@@ -456,7 +464,7 @@ namespace MyNamespace
             // Get the standard component bounds
             Rectangle baseRectangle = GH_Convert.ToRectangle(Bounds);
             
-            // Remember the component area for rendering purposes
+            // Remember the original component area for parameter positioning
             ComponentBounds = new RectangleF(
                 baseRectangle.X, 
                 baseRectangle.Y, 
@@ -467,13 +475,18 @@ namespace MyNamespace
             // Determine width to fit the preview centered
             int totalWidth = Math.Max(baseRectangle.Width, PreviewWidth + 20);
             
+            // Make the component wider if needed to fit the preview
+            if (totalWidth > baseRectangle.Width)
+            {
+                baseRectangle.Width = totalWidth;
+            }
+            
             // Add space for the preview below the standard component UI
-            baseRectangle.Width = totalWidth;
             baseRectangle.Height += PreviewHeight + 10;
             
             // Calculate preview rectangle - centered horizontally
             PreviewBounds = new RectangleF(
-                baseRectangle.X + (totalWidth - PreviewWidth) / 2, // Center horizontally
+                baseRectangle.X + (baseRectangle.Width - PreviewWidth) / 2, // Center horizontally
                 ComponentBounds.Bottom + 5, // Position below component area
                 PreviewWidth,
                 PreviewHeight
@@ -484,11 +497,11 @@ namespace MyNamespace
 
         protected override void Render(GH_Canvas canvas, Graphics graphics, GH_CanvasChannel channel)
         {
-            base.Render(canvas, graphics, channel);
-            
-            // Only draw our custom preview in the Objects channel
             if (channel == GH_CanvasChannel.Objects)
             {
+                // For objects channel (main component rendering)
+                base.Render(canvas, graphics, channel);
+                
                 // Draw border for preview area
                 graphics.DrawRectangle(Pens.DarkGray, PreviewBounds.X, PreviewBounds.Y, PreviewBounds.Width, PreviewBounds.Height);
                 
@@ -512,24 +525,12 @@ namespace MyNamespace
                     }
                 }
                 
-                // Optionally draw component name centered if needed - uncomment if necessary
-                /*
-                // Component name area is in the upper part of component
-                RectangleF nameRect = new RectangleF(
-                    ComponentBounds.Left, 
-                    ComponentBounds.Top, 
-                    ComponentBounds.Width, 
-                    24 // Height for name
-                );
-                
-                // Draw centered name
-                StringFormat componentNameFormat = new StringFormat
-                {
-                    Alignment = StringAlignment.Center,
-                    LineAlignment = StringAlignment.Center
-                };
-                graphics.DrawString(Owner.NickName, GH_FontServer.StandardBold, Brushes.Black, nameRect, componentNameFormat);
-                */
+                // No component name text - removed
+            }
+            else
+            {
+                // For all other channels, use default rendering
+                base.Render(canvas, graphics, channel);
             }
         }
     }
