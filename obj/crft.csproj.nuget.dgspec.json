@@ -60,6 +60,10 @@
               "version": "[1.0.3, )",
               "generatePathProperty": true
             },
+            "OpenCvSharp4": {
+              "target": "Package",
+              "version": "[4.10.0.20241108, )"
+            },
             "System.Drawing.Common": {
               "include": "Compile, Build, Native, ContentFiles, Analyzers, BuildTransitive",
               "target": "Package",

@@ -26,3 +26,4 @@
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/crft.pdb
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/crft.genruntimeconfig.cache
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/ref/crft.gha
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/OpenCvSharp.dll

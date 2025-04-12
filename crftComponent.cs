@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Runtime.InteropServices;
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
-using AForge.Video;
-using AForge.Video.DirectShow;
 using Grasshopper.Kernel;
 using Grasshopper.GUI.Canvas;
 using Rhino.Geometry;
@@ -13,10 +15,14 @@ namespace MyNamespace
     public class WebcamComponent : GH_Component
     {
         internal Bitmap _currentFrame;
-        private FilterInfoCollection _videoDevices;
-        private VideoCaptureDevice _videoSource;
         private bool _isRunning = false;
-        private Rectangle _previewRect;
+        private bool _hasCapturedFrame = false;
+        private int _deviceIndex = 0;
+        private CancellationTokenSource _cancellationSource;
+        private Task _captureTask;
+        private Process _avfProcess;
+        private string _tempImagePath;
+        private readonly int _refreshInterval = 100; // in milliseconds
 
         /// <summary>
         /// Initializes a new instance of the WebcamComponent class.
@@ -26,6 +32,9 @@ namespace MyNamespace
               "Captures and displays webcam video feed",
               "Display", "Preview")
         {
+            _tempImagePath = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), 
+                "grasshopper_webcam_" + Guid.NewGuid().ToString() + ".jpg");
         }
 
         /// <summary>
@@ -59,7 +68,8 @@ namespace MyNamespace
 
             if (enable && !_isRunning)
             {
-                StartCamera(deviceIndex);
+                _deviceIndex = deviceIndex;
+                StartCamera();
             }
             else if (!enable && _isRunning)
             {
@@ -72,74 +82,319 @@ namespace MyNamespace
             }
         }
 
-        private void StartCamera(int deviceIndex)
+        private void StartCamera()
         {
             try
             {
-                // Get available video devices
-                _videoDevices = new FilterInfoCollection(FilterCategory.VideoInputDevice);
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Starting webcam capture...");
                 
-                if (_videoDevices.Count == 0)
-                {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "No webcam devices found");
-                    return;
-                }
-
-                // Make sure index is in range
-                if (deviceIndex < 0 || deviceIndex >= _videoDevices.Count)
-                {
-                    deviceIndex = 0;
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Using default camera. Available: {_videoDevices.Count}");
-                }
-
-                // Create video source
-                _videoSource = new VideoCaptureDevice(_videoDevices[deviceIndex].MonikerString);
-                _videoSource.NewFrame += OnNewFrame;
-                _videoSource.Start();
+                _cancellationSource = new CancellationTokenSource();
+                _captureTask = Task.Run(() => CaptureLoop(_cancellationSource.Token));
                 
                 _isRunning = true;
             }
             catch (Exception ex)
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Error starting webcam: " + ex.Message);
+                if (ex.InnerException != null)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Inner exception: " + ex.InnerException.Message);
+                }
+            }
+        }
+
+        private void CaptureLoop(CancellationToken token)
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                // macOS approach
+                MacOSCaptureLoop(token);
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                // Windows would use AForge here - not implemented in this version
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Windows implementation uses AForge.Video.DirectShow");
+            }
+            else
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Unsupported platform");
+            }
+        }
+
+        private void MacOSCaptureLoop(CancellationToken token)
+        {
+            try
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Starting macOS webcam capture...");
+                // Create a shell script file that will capture webcam images
+                string scriptPath = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(), 
+                    "capture_" + Guid.NewGuid().ToString() + ".sh");
+
+                // For debugging
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Script path: {scriptPath}");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Temporary image path: {_tempImagePath}");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Device index: {_deviceIndex}");
+
+                // Get available webcams and log them
+                Process listDevices = new Process();
+                listDevices.StartInfo.FileName = "imagesnap";
+                listDevices.StartInfo.Arguments = "-l";
+                listDevices.StartInfo.UseShellExecute = false;
+                listDevices.StartInfo.RedirectStandardOutput = true;
+                listDevices.StartInfo.CreateNoWindow = true;
+                listDevices.Start();
+                string deviceList = listDevices.StandardOutput.ReadToEnd();
+                listDevices.WaitForExit();
+                
+                // Extract camera names from output
+                string[] lines = deviceList.Split('\n');
+                List<string> cameraNames = new List<string>();
+                
+                foreach (string line in lines)
+                {
+                    if (line.StartsWith("=>"))
+                    {
+                        string cameraName = line.Substring(3).Trim();
+                        cameraNames.Add(cameraName);
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Found camera: {cameraName}");
+                    }
+                }
+                
+                // Check if we have cameras and if deviceIndex is valid
+                if (cameraNames.Count == 0)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "No webcams found with imagesnap -l");
+                    return;
+                }
+                
+                // Adjust device index if out of range
+                if (_deviceIndex < 0 || _deviceIndex >= cameraNames.Count)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Device index {_deviceIndex} out of range. Using camera 0.");
+                    _deviceIndex = 0;
+                }
+                
+                string selectedCamera = cameraNames[_deviceIndex];
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Using camera: {selectedCamera}");
+                
+                string scriptContent = @"#!/bin/bash
+CAMERA_NAME=""" + selectedCamera.Replace("\"", "\\\"") + @"""
+OUTPUT_PATH=""" + _tempImagePath + @"""
+
+echo ""Capturing from camera: $CAMERA_NAME to $OUTPUT_PATH""
+
+# Start the continuous capture
+while true; do
+    # Use imagesnap with camera name
+    imagesnap -d ""$CAMERA_NAME"" -w 0.1 $OUTPUT_PATH
+    sleep 0.1
+done";
+
+                System.IO.File.WriteAllText(scriptPath, scriptContent);
+                
+                // Make the script executable
+                Process chmodProcess = new Process();
+                chmodProcess.StartInfo.FileName = "chmod";
+                chmodProcess.StartInfo.Arguments = $"+x {scriptPath}";
+                chmodProcess.StartInfo.UseShellExecute = false;
+                chmodProcess.StartInfo.CreateNoWindow = true;
+                chmodProcess.Start();
+                chmodProcess.WaitForExit();
+
+                // First, check if imagesnap is installed
+                Process checkImagesnap = new Process();
+                checkImagesnap.StartInfo.FileName = "which";
+                checkImagesnap.StartInfo.Arguments = "imagesnap";
+                checkImagesnap.StartInfo.UseShellExecute = false;
+                checkImagesnap.StartInfo.RedirectStandardOutput = true;
+                checkImagesnap.StartInfo.CreateNoWindow = true;
+                checkImagesnap.Start();
+                string imagesnap = checkImagesnap.StandardOutput.ReadToEnd().Trim();
+                checkImagesnap.WaitForExit();
+
+                if (string.IsNullOrEmpty(imagesnap))
+                {
+                    // Install imagesnap
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Installing imagesnap...");
+                    Process brewProcess = new Process();
+                    brewProcess.StartInfo.FileName = "brew";
+                    brewProcess.StartInfo.Arguments = "install imagesnap";
+                    brewProcess.StartInfo.UseShellExecute = false;
+                    brewProcess.StartInfo.CreateNoWindow = true;
+                    brewProcess.Start();
+                    brewProcess.WaitForExit();
+                }
+
+                // Start the capture script
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Running script directly with bash...");
+                
+                _avfProcess = new Process();
+                _avfProcess.StartInfo.FileName = "bash";
+                _avfProcess.StartInfo.Arguments = scriptPath;
+                _avfProcess.StartInfo.UseShellExecute = false;
+                _avfProcess.StartInfo.CreateNoWindow = true;
+                _avfProcess.StartInfo.WorkingDirectory = System.IO.Path.GetTempPath(); // Set working directory to temp
+                _avfProcess.StartInfo.RedirectStandardOutput = true;
+                _avfProcess.StartInfo.RedirectStandardError = true;
+                _avfProcess.OutputDataReceived += (sender, e) => {
+                    if (!string.IsNullOrEmpty(e.Data))
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Process output: " + e.Data);
+                };
+                _avfProcess.ErrorDataReceived += (sender, e) => {
+                    if (!string.IsNullOrEmpty(e.Data))
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Process error: " + e.Data);
+                };
+                
+                try
+                {
+                    _avfProcess.Start();
+                    _avfProcess.BeginOutputReadLine();
+                    _avfProcess.BeginErrorReadLine();
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Process started successfully");
+                }
+                catch (Exception ex)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Failed to start process: " + ex.Message);
+                    if (ex.InnerException != null)
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Inner exception: " + ex.InnerException.Message);
+                }
+                
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Started capture process");
+
+                // Take a first capture directly to see if it works
+                try {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Taking a test capture...");
+                    
+                    Process testCapture = new Process();
+                    testCapture.StartInfo.FileName = "imagesnap";
+                    testCapture.StartInfo.Arguments = $"-d \"{selectedCamera}\" \"{_tempImagePath}\"";
+                    testCapture.StartInfo.UseShellExecute = false;
+                    testCapture.StartInfo.CreateNoWindow = true;
+                    testCapture.StartInfo.WorkingDirectory = System.IO.Path.GetTempPath();
+                    testCapture.Start();
+                    testCapture.WaitForExit();
+                    
+                    if (testCapture.ExitCode == 0) {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Test capture successful!");
+                    } else {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Test capture exited with code: " + testCapture.ExitCode);
+                    }
+                } catch (Exception ex) {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Test capture failed: " + ex.Message);
+                }
+                
+                // Monitor for new frames
+                while (!token.IsCancellationRequested)
+                {
+                    if (System.IO.File.Exists(_tempImagePath))
+                    {
+                        try
+                        {
+                            // Add debug information about file
+                            var fileInfo = new System.IO.FileInfo(_tempImagePath);
+                            if (fileInfo.Length > 0)
+                            {
+                                // Load the image
+                                using (System.IO.FileStream stream = new System.IO.FileStream(_tempImagePath, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite))
+                                {
+                                    if (stream.Length > 0) // Make sure we have data
+                                    {
+                                        // Create a new bitmap from the file
+                                        Bitmap newFrame = new Bitmap(stream);
+                                        
+                                        // Update the current frame
+                                        lock (this)
+                                        {
+                                            if (_currentFrame != null)
+                                            {
+                                                _currentFrame.Dispose();
+                                            }
+                                            _currentFrame = (Bitmap)newFrame.Clone();
+                                            
+                                            // Log first successful capture
+                                            if (!_hasCapturedFrame)
+                                            {
+                                                _hasCapturedFrame = true;
+                                                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"First frame captured successfully! Size: {_currentFrame.Width}x{_currentFrame.Height}");
+                                            }
+                                        }
+
+                                        // Force UI update
+                                        if (Grasshopper.Instances.ActiveCanvas != null)
+                                        {
+                                            Grasshopper.Instances.ActiveCanvas.Invoke(new Action(() => 
+                                            {
+                                                Grasshopper.Instances.ActiveCanvas.Invalidate();
+                                            }));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // File might be in use, skip this frame
+                            Debug.WriteLine("Frame capture error: " + ex.Message);
+                        }
+                    }
+
+                    // Sleep before the next capture
+                    Thread.Sleep(_refreshInterval);
+                }
+
+                // Clean up
+                if (_avfProcess != null && !_avfProcess.HasExited)
+                {
+                    _avfProcess.Kill();
+                }
+
+                // Delete temporary files
+                try
+                {
+                    if (System.IO.File.Exists(scriptPath))
+                    {
+                        System.IO.File.Delete(scriptPath);
+                    }
+                    if (System.IO.File.Exists(_tempImagePath))
+                    {
+                        System.IO.File.Delete(_tempImagePath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine("Error cleaning up: " + ex.Message);
+                }
+            }
+            catch (Exception ex)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Capture error: " + ex.Message);
             }
         }
 
         private void StopCamera()
         {
-            if (_videoSource != null && _videoSource.IsRunning)
+            if (_isRunning)
             {
-                _videoSource.SignalToStop();
-                _videoSource.NewFrame -= OnNewFrame;
-                _videoSource = null;
-            }
-            _isRunning = false;
-        }
-
-        private void OnNewFrame(object sender, NewFrameEventArgs eventArgs)
-        {
-            // Make a copy of the frame since it will be disposed
-            lock (this)
-            {
-                if (_currentFrame != null)
+                // Cancel the capture task
+                _cancellationSource?.Cancel();
+                
+                // Kill the process on macOS
+                if (_avfProcess != null && !_avfProcess.HasExited)
                 {
-                    _currentFrame.Dispose();
+                    try
+                    {
+                        _avfProcess.Kill();
+                        _avfProcess = null;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine("Error stopping process: " + ex.Message);
+                    }
                 }
-                _currentFrame = (Bitmap)eventArgs.Frame.Clone();
+                
+                _isRunning = false;
             }
-
-            // Force UI update
-            Grasshopper.Instances.ActiveCanvas.Invalidate();
-        }
-
-        public override void DrawViewportWires(IGH_PreviewArgs args)
-        {
-            base.DrawViewportWires(args);
-        }
-
-        public override void DrawViewportMeshes(IGH_PreviewArgs args)
-        {
-            base.DrawViewportMeshes(args);
         }
 
         public override void CreateAttributes()
