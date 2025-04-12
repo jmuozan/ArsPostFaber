@@ -1,65 +1,6 @@
 {
   "version": 3,
   "targets": {
-    ".NETFramework,Version=v4.8": {
-      "Grasshopper/8.0.23304.9001": {
-        "type": "package",
-        "dependencies": {
-          "RhinoCommon": "[8.0.23304.9001]"
-        },
-        "compile": {
-          "lib/net48/GH_IO.dll": {
-            "related": ".xml"
-          },
-          "lib/net48/Grasshopper.dll": {
-            "related": ".xml"
-          }
-        },
-        "runtime": {
-          "lib/net48/_._": {
-            "related": ".xml"
-          }
-        },
-        "build": {
-          "build/net48/Grasshopper.targets": {}
-        }
-      },
-      "Microsoft.NETFramework.ReferenceAssemblies/1.0.3": {
-        "type": "package",
-        "dependencies": {
-          "Microsoft.NETFramework.ReferenceAssemblies.net48": "1.0.3"
-        }
-      },
-      "Microsoft.NETFramework.ReferenceAssemblies.net48/1.0.3": {
-        "type": "package",
-        "build": {
-          "build/Microsoft.NETFramework.ReferenceAssemblies.net48.targets": {}
-        }
-      },
-      "RhinoCommon/8.0.23304.9001": {
-        "type": "package",
-        "compile": {
-          "lib/net48/Ed.Eto.dll": {
-            "related": ".xml"
-          },
-          "lib/net48/Eto.dll": {
-            "related": ".xml"
-          },
-          "lib/net48/Rhino.UI.dll": {},
-          "lib/net48/RhinoCommon.dll": {
-            "related": ".xml"
-          }
-        },
-        "runtime": {
-          "lib/net48/_._": {
-            "related": ".xml"
-          }
-        },
-        "build": {
-          "build/net48/RhinoCommon.targets": {}
-        }
-      }
-    },
     "net7.0": {
       "Grasshopper/8.0.23304.9001": {
         "type": "package",
@@ -159,53 +100,6 @@
           }
         }
       }
-    },
-    "net7.0-windows7.0": {
-      "Grasshopper/8.0.23304.9001": {
-        "type": "package",
-        "dependencies": {
-          "RhinoCommon": "[8.0.23304.9001]"
-        },
-        "compile": {
-          "lib/net48/GH_IO.dll": {
-            "related": ".xml"
-          },
-          "lib/net48/Grasshopper.dll": {
-            "related": ".xml"
-          }
-        },
-        "runtime": {
-          "lib/net48/_._": {
-            "related": ".xml"
-          }
-        },
-        "build": {
-          "build/net48/Grasshopper.targets": {}
-        }
-      },
-      "RhinoCommon/8.0.23304.9001": {
-        "type": "package",
-        "compile": {
-          "lib/net48/Ed.Eto.dll": {
-            "related": ".xml"
-          },
-          "lib/net48/Eto.dll": {
-            "related": ".xml"
-          },
-          "lib/net48/Rhino.UI.dll": {},
-          "lib/net48/RhinoCommon.dll": {
-            "related": ".xml"
-          }
-        },
-        "runtime": {
-          "lib/net48/_._": {
-            "related": ".xml"
-          }
-        },
-        "build": {
-          "build/net48/RhinoCommon.targets": {}
-        }
-      }
     }
   },
   "libraries": {
@@ -224,17 +118,6 @@
         "lib/net48/GH_IO.xml",
         "lib/net48/Grasshopper.dll",
         "lib/net48/Grasshopper.xml"
-      ]
-    },
-    "Microsoft.NETFramework.ReferenceAssemblies/1.0.3": {
-      "sha512": "vUc9Npcs14QsyOD01tnv/m8sQUnGTGOw1BCmKcv77LBJY7OxhJ+zJF7UD/sCL3lYNFuqmQEVlkfS4Quif6FyYg==",
-      "type": "package",
-      "path": "microsoft.netframework.referenceassemblies/1.0.3",
-      "files": [
-        ".nupkg.metadata",
-        ".signature.p7s",
-        "microsoft.netframework.referenceassemblies.1.0.3.nupkg.sha512",
-        "microsoft.netframework.referenceassemblies.nuspec"
       ]
     },
     "Microsoft.NETFramework.ReferenceAssemblies.net48/1.0.3": {
@@ -708,17 +591,10 @@
     }
   },
   "projectFileDependencyGroups": {
-    ".NETFramework,Version=v4.8": [
-      "Grasshopper >= 8.0.23304.9001",
-      "Microsoft.NETFramework.ReferenceAssemblies >= 1.0.3"
-    ],
     "net7.0": [
       "Grasshopper >= 8.0.23304.9001",
       "Microsoft.NETFramework.ReferenceAssemblies.net48 >= 1.0.3",
       "System.Drawing.Common >= 7.0.0"
-    ],
-    "net7.0-windows7.0": [
-      "Grasshopper >= 8.0.23304.9001"
     ]
   },
   "packageFolders": {
@@ -738,9 +614,7 @@
         "/Users/jorgemuyo/.nuget/NuGet/NuGet.Config"
       ],
       "originalTargetFrameworks": [
-        "net48",
-        "net7.0",
-        "net7.0-windows"
+        "net7.0"
       ],
       "sources": {
         "/opt/homebrew/Cellar/dotnet/9.0.101/libexec/library-packs": {},
@@ -749,14 +623,6 @@
       "frameworks": {
         "net7.0": {
           "targetAlias": "net7.0",
-          "projectReferences": {}
-        },
-        "net7.0-windows7.0": {
-          "targetAlias": "net7.0-windows",
-          "projectReferences": {}
-        },
-        "net48": {
-          "targetAlias": "net48",
           "projectReferences": {}
         }
       },
@@ -824,64 +690,6 @@
         "frameworkReferences": {
           "Microsoft.NETCore.App": {
             "privateAssets": "all"
-          }
-        },
-        "runtimeIdentifierGraphPath": "/opt/homebrew/Cellar/dotnet/9.0.101/libexec/sdk/9.0.101/RuntimeIdentifierGraph.json"
-      },
-      "net7.0-windows7.0": {
-        "targetAlias": "net7.0-windows",
-        "dependencies": {
-          "Grasshopper": {
-            "include": "Compile, Build, Native, ContentFiles, Analyzers, BuildTransitive",
-            "target": "Package",
-            "version": "[8.0.23304.9001, )"
-          }
-        },
-        "imports": [
-          "net461",
-          "net462",
-          "net47",
-          "net471",
-          "net472",
-          "net48",
-          "net481"
-        ],
-        "assetTargetFallback": true,
-        "warn": true,
-        "downloadDependencies": [
-          {
-            "name": "Microsoft.AspNetCore.App.Ref",
-            "version": "[7.0.20, 7.0.20]"
-          },
-          {
-            "name": "Microsoft.NETCore.App.Ref",
-            "version": "[7.0.20, 7.0.20]"
-          },
-          {
-            "name": "Microsoft.WindowsDesktop.App.Ref",
-            "version": "[7.0.20, 7.0.20]"
-          }
-        ],
-        "frameworkReferences": {
-          "Microsoft.NETCore.App": {
-            "privateAssets": "all"
-          }
-        },
-        "runtimeIdentifierGraphPath": "/opt/homebrew/Cellar/dotnet/9.0.101/libexec/sdk/9.0.101/RuntimeIdentifierGraph.json"
-      },
-      "net48": {
-        "targetAlias": "net48",
-        "dependencies": {
-          "Grasshopper": {
-            "include": "Compile, Build, Native, ContentFiles, Analyzers, BuildTransitive",
-            "target": "Package",
-            "version": "[8.0.23304.9001, )"
-          },
-          "Microsoft.NETFramework.ReferenceAssemblies": {
-            "suppressParent": "All",
-            "target": "Package",
-            "version": "[1.0.3, )",
-            "autoReferenced": true
           }
         },
         "runtimeIdentifierGraphPath": "/opt/homebrew/Cellar/dotnet/9.0.101/libexec/sdk/9.0.101/RuntimeIdentifierGraph.json"
