@@ -22,7 +22,7 @@ namespace MyNamespace
         private Task _captureTask;
         private Process _avfProcess;
         private string _tempImagePath;
-        private readonly int _refreshInterval = 100; // in milliseconds
+        private readonly int _refreshInterval = 33; // in milliseconds (30 fps)
 
         /// <summary>
         /// Initializes a new instance of the WebcamComponent class.
@@ -169,6 +169,9 @@ namespace MyNamespace
                 string selectedCamera = cameraNames[_deviceIndex];
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Using camera: {selectedCamera}");
                 
+                // Start continuous capture process (single long-running process)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Starting continuous capture...");
+                
                 // Start continuous capture with direct method
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Starting continuous capture...");
                 
@@ -260,6 +263,21 @@ namespace MyNamespace
                 if (ex.InnerException != null)
                 {
                     AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Inner exception: {ex.InnerException.Message}");
+                }
+            }
+            finally
+            {
+                // Clean up the process if needed
+                if (_avfProcess != null && !_avfProcess.HasExited)
+                {
+                    try
+                    {
+                        _avfProcess.Kill();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error stopping capture process: {ex.Message}");
+                    }
                 }
             }
         }
