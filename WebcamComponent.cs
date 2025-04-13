@@ -7,10 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Grasshopper.Kernel;
+using Grasshopper.Kernel.Types;
 using Grasshopper.GUI.Canvas;
 using Rhino.Geometry;
 
-namespace MyNamespace
+namespace crft
 {
     public class WebcamComponent : GH_Component
     {
@@ -23,6 +24,7 @@ namespace MyNamespace
         private Process _avfProcess;
         private string _tempImagePath;
         private readonly int _refreshInterval = 100; // in milliseconds - lower value may overload imagesnap
+        internal readonly object _lockObject = new object(); // Add lock object for thread safety
 
         /// <summary>
         /// Initializes a new instance of the WebcamComponent class.
@@ -51,7 +53,14 @@ namespace MyNamespace
         /// </summary>
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
+            // Use the same output parameter type as WebcamFallback
             pManager.AddGenericParameter("Image", "I", "Current webcam frame as bitmap", GH_ParamAccess.item);
+            
+            // Force the output parameter to be required
+            if (pManager[0] is Grasshopper.Kernel.Parameters.Param_GenericObject param)
+            {
+                param.Optional = false;
+            }
         }
 
         /// <summary>
@@ -76,9 +85,117 @@ namespace MyNamespace
                 StopCamera();
             }
 
-            if (_currentFrame != null)
+            // Add debug messages to help diagnose connection issues
+            if (_currentFrame == null)
             {
-                DA.SetData(0, _currentFrame);
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "No frame available yet");
+                
+                // Even without a frame, ensure we're sending something to notify connected components
+                try
+                {
+                    // Create a dummy image to ensure connections work even before we have real frame
+                    Bitmap dummyImage = new Bitmap(320, 240);
+                    using (Graphics g = Graphics.FromImage(dummyImage))
+                    {
+                        g.Clear(Color.Black);
+                        using (Font font = new Font("Arial", 10))
+                        {
+                            g.DrawString("Camera initializing...", font, Brushes.White, new PointF(80, 110));
+                        }
+                    }
+                    
+                    // Send this placeholder image through the output
+                    DA.SetData(0, new GH_ObjectWrapper(dummyImage));
+                    
+                    // Log the action
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Sent placeholder image to output");
+                }
+                catch (Exception ex)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Error sending placeholder: {ex.Message}");
+                }
+                
+                return;
+            }
+
+            try
+            {
+                // Create a copy of the current frame to avoid any threading issues
+                Bitmap frameCopy;
+                lock (_lockObject)
+                {
+                    frameCopy = (Bitmap)_currentFrame.Clone();
+                }
+                
+                // Ensure we have a valid frame copy
+                if (frameCopy == null)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Failed to clone frame");
+                    return;
+                }
+                
+                // Log the bitmap properties
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, 
+                    $"Sending frame: {frameCopy.Width}x{frameCopy.Height}, PixelFormat: {frameCopy.PixelFormat}");
+                
+                try
+                {
+                    // Simplify the output approach - just send the bitmap directly
+                    // This simpler approach may be more reliable
+                    
+                    // Log what's happening
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, 
+                        $"Sending direct bitmap: {frameCopy.Width}x{frameCopy.Height}");
+                    
+                    // Make sure we disable gap logic to ensure data flows
+                    DA.DisableGapLogic();
+                    
+                    // Just send the bitmap directly - let Grasshopper handle conversion
+                    DA.SetData(0, frameCopy);
+                    
+                    // Log final success
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, 
+                        $"DATA SENT: Direct bitmap {frameCopy.Width}x{frameCopy.Height}");
+                    
+                    // Force component invalidation to ensure the display component gets updated
+                    if (Grasshopper.Instances.ActiveCanvas != null)
+                    {
+                        Grasshopper.Instances.ActiveCanvas.BeginInvoke((Action)(() => 
+                        {
+                            // Force both this component and all connected components to update
+                            ExpireSolution(true);
+                            
+                            // Make sure output parameter is marked for update
+                            if (this.Params.Output[0] != null)
+                                this.Params.Output[0].ExpireSolution(true);
+                            
+                            // Force document update
+                            OnDisplayExpired(true);
+                            
+                            // Ping the document
+                            GH_Document doc = OnPingDocument();
+                            if (doc != null)
+                                doc.NewSolution(false);
+                            
+                            // Ensure the canvas is refreshed
+                            Grasshopper.Instances.ActiveCanvas.Refresh();
+                        }));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, 
+                        $"Error setting output data: {ex.Message}");
+                    if (ex.InnerException != null)
+                    {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, 
+                            $"Inner exception: {ex.InnerException.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Error sending frame: {ex.Message}");
             }
         }
 
@@ -273,7 +390,7 @@ namespace MyNamespace
                                         {
                                             Bitmap newFrame = new Bitmap(stream);
                                             
-                                            lock (this)
+                                            lock (_lockObject)
                                             {
                                                 if (_currentFrame != null)
                                                 {
@@ -378,10 +495,12 @@ namespace MyNamespace
             }
         }
 
-        public override void CreateAttributes()
-        {
-            m_attributes = new WebcamComponentAttributes(this);
-        }
+        // Use standard attributes since we're only capturing, not displaying
+        // The WebcamViewerComponent will handle the display
+        // public override void CreateAttributes()
+        // {
+        //    m_attributes = new WebcamComponentAttributes(this);
+        // }
 
         public override bool Write(GH_IO.Serialization.GH_IWriter writer)
         {
@@ -507,12 +626,18 @@ namespace MyNamespace
                 
                 // Draw the video frame
                 Bitmap frame = null;
-                lock (Owner)
+                lock (Owner._lockObject)
                 {
                     if (Owner._currentFrame != null)
                     {
-                        frame = Owner._currentFrame;
-                        
+                        frame = (Bitmap)Owner._currentFrame.Clone();
+                    }
+                }
+                
+                if (frame != null)
+                {
+                    try
+                    {
                         // Calculate proportional dimensions to maintain aspect ratio
                         float frameRatio = (float)frame.Width / frame.Height;
                         float previewRatio = PreviewBounds.Width / PreviewBounds.Height;
@@ -546,15 +671,22 @@ namespace MyNamespace
                         
                         // Draw the video frame with proper aspect ratio
                         graphics.DrawImage(frame, targetRect);
+                        
+                        // Clean up the clone
+                        frame.Dispose();
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        // Draw a message when no video is available
-                        StringFormat format = new StringFormat();
-                        format.Alignment = StringAlignment.Center;
-                        format.LineAlignment = StringAlignment.Center;
-                        graphics.DrawString("No webcam feed available", GH_FontServer.Standard, Brushes.DarkGray, PreviewBounds, format);
+                        Debug.WriteLine($"Error drawing preview: {ex.Message}");
                     }
+                }
+                else
+                {
+                    // Draw a message when no video is available
+                    StringFormat format = new StringFormat();
+                    format.Alignment = StringAlignment.Center;
+                    format.LineAlignment = StringAlignment.Center;
+                    graphics.DrawString("No webcam feed available", GH_FontServer.Standard, Brushes.DarkGray, PreviewBounds, format);
                 }
                 
                 // No component name text - removed
