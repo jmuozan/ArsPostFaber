@@ -1,3 +1,4 @@
 checkpoints
 ceramics_segmentation
 sam_hq_vit_b.pth
+sam_vit_b_01ec64.pth
