@@ -198,92 +198,159 @@ namespace crft
         /// <param name="DA">The DA object is used to retrieve from inputs and store in outputs.</param>
         protected override void SolveInstance(IGH_DataAccess DA)
         {
-            object inputObj = null;
             bool record = false;
             int modelSize = 0;
 
-            // Get data from inputs
-            if (!DA.GetData(0, ref inputObj)) 
+            // Setup logging for inputs
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Starting SolveInstance with input sources: " + 
+                (Params.Input[0].SourceCount > 0 ? Params.Input[0].SourceCount.ToString() : "0"));
+
+            // Try to get bitmap directly
+            Bitmap directBitmap = null;
+            if (DA.GetData(0, ref directBitmap) && directBitmap != null)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "No input image received");
-                return;
-            }
-            
-            if (!DA.GetData(1, ref record)) return;
-            if (!DA.GetData(2, ref modelSize)) return;
-            
-            // Extract the bitmap from input object
-            Bitmap inputImage = null;
-            
-            // Log what type of object we received
-            string inputType = inputObj != null ? inputObj.GetType().FullName : "null";
-            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Received input of type: {inputType}");
-            
-            try {
-                // Handle our custom GH_Bitmap type
-                if (inputObj is GH_Bitmap bitmapGoo)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"SUCCESS: Got bitmap directly: {directBitmap.Width}x{directBitmap.Height}");
+                
+                try 
                 {
-                    inputImage = bitmapGoo.Value;
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Extracted bitmap from GH_Bitmap: {inputImage.Width}x{inputImage.Height}");
+                    // Clone to avoid threading issues
+                    Bitmap inputImage = (Bitmap)directBitmap.Clone();
+                    
+                    // Get other inputs
+                    if (!DA.GetData(1, ref record)) return;
+                    if (!DA.GetData(2, ref modelSize)) return;
+                    
+                    // Process the bitmap
+                    ProcessImage(inputImage, record, modelSize, DA);
+                    return;
                 }
-                // Handle GH_ObjectWrapper
-                else if (inputObj is Grasshopper.Kernel.Types.GH_ObjectWrapper wrapper)
+                catch (Exception ex)
                 {
-                    if (wrapper.Value is Bitmap wrappedBitmap)
-                    {
-                        inputImage = wrappedBitmap;
-                        AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Extracted bitmap from GH_ObjectWrapper: {inputImage.Width}x{inputImage.Height}");
-                    }
-                    else
-                    {
-                        // Log what's in the wrapper
-                        string wrappedType = wrapper.Value != null ? wrapper.Value.GetType().FullName : "null";
-                        AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Wrapper contains non-bitmap type: {wrappedType}");
-                    }
-                }
-                // Direct bitmap - this is what the webcam component sends
-                else if (inputObj is Bitmap bitmap)
-                {
-                    inputImage = bitmap;
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Received direct bitmap: {inputImage.Width}x{inputImage.Height}");
-                }
-                // Try to extract from other GH_Goo types
-                else if (inputObj is IGH_Goo goo)
-                {
-                    // Try to cast to bitmap directly 
-                    Bitmap extractedBitmap = null;
-                    if (goo.CastTo(out extractedBitmap) && extractedBitmap != null)
-                    {
-                        inputImage = extractedBitmap;
-                        AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Cast IGH_Goo to Bitmap: {inputImage.Width}x{inputImage.Height}");
-                    }
-                    else
-                    {
-                        // Try alternate method
-                        object target = null;
-                        if (goo.CastTo<object>(out target) && target is Bitmap bmp)
-                        {
-                            inputImage = bmp;
-                            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Cast IGH_Goo to object then to Bitmap: {inputImage.Width}x{inputImage.Height}");
-                        }
-                        else
-                        {
-                            AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Failed to cast {goo.TypeName} to Bitmap");
-                        }
-                    }
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Error cloning direct bitmap: {ex.Message}");
                 }
             }
-            catch (Exception ex)
+            
+            // Try to get our custom GH_Bitmap
+            crft.GH_Bitmap bitmapGoo = null;
+            if (DA.GetData(0, ref bitmapGoo) && bitmapGoo != null && bitmapGoo.Value != null)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Error extracting bitmap: {ex.Message}");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Got GH_Bitmap: {bitmapGoo.Value.Width}x{bitmapGoo.Value.Height}");
+                
+                try
+                {
+                    Bitmap inputImage = (Bitmap)bitmapGoo.Value.Clone();
+                    
+                    // Get other inputs
+                    if (!DA.GetData(1, ref record)) return;
+                    if (!DA.GetData(2, ref modelSize)) return;
+                    
+                    // Process the bitmap
+                    ProcessImage(inputImage, record, modelSize, DA);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Error extracting from GH_Bitmap: {ex.Message}");
+                }
             }
             
+            // Try to get from GH_ObjectWrapper
+            Grasshopper.Kernel.Types.GH_ObjectWrapper wrapper = null;
+            if (DA.GetData(0, ref wrapper) && wrapper != null && wrapper.Value != null)
+            {
+                string wrapperType = wrapper.Value.GetType().Name;
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Got wrapper with value type: {wrapperType}");
+                
+                if (wrapper.Value is Bitmap wrappedBitmap)
+                {
+                    try
+                    {
+                        Bitmap inputImage = (Bitmap)wrappedBitmap.Clone();
+                        
+                        // Get other inputs
+                        if (!DA.GetData(1, ref record)) return;
+                        if (!DA.GetData(2, ref modelSize)) return;
+                        
+                        // Process the bitmap
+                        ProcessImage(inputImage, record, modelSize, DA);
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Error extracting from wrapper: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Wrapper contains non-bitmap type: {wrapperType}");
+                }
+            }
+            
+            // Try to get any object and see if we can cast it
+            object obj = null;
+            if (DA.GetData(0, ref obj) && obj != null)
+            {
+                string objectType = obj.GetType().Name;
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Got generic object of type: {objectType}");
+                
+                try
+                {
+                    Bitmap inputImage = null;
+                    
+                    // Try different conversion methods
+                    if (obj is Bitmap rawBitmap)
+                    {
+                        inputImage = (Bitmap)rawBitmap.Clone();
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Converted direct bitmap: {inputImage.Width}x{inputImage.Height}");
+                    }
+                    else if (obj is System.Drawing.Image image)
+                    {
+                        inputImage = new Bitmap(image);
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Converted Image to Bitmap: {inputImage.Width}x{inputImage.Height}");
+                    }
+                    else if (obj is IGH_Goo goo)
+                    {
+                        // Try different types of casting with IGH_Goo
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Trying to cast IGH_Goo: {goo.TypeName}");
+                        
+                        // Try to cast to a bitmap
+                        Bitmap bmp = null;
+                        if (goo.CastTo(out bmp) && bmp != null)
+                        {
+                            inputImage = (Bitmap)bmp.Clone();
+                            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Cast IGH_Goo to Bitmap: {inputImage.Width}x{inputImage.Height}");
+                        }
+                    }
+                    
+                    if (inputImage != null)
+                    {
+                        // Get other inputs
+                        if (!DA.GetData(1, ref record)) return;
+                        if (!DA.GetData(2, ref modelSize)) return;
+                        
+                        // Process the bitmap
+                        ProcessImage(inputImage, record, modelSize, DA);
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Error converting to bitmap: {ex.Message}");
+                }
+            }
+            
+            // If we got here, we couldn't get a bitmap
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Could not get an image from the input. Check the webcam component connection.");
+        }
+        
+        private void ProcessImage(Bitmap inputImage, bool record, int modelSize, IGH_DataAccess DA)
+        {
             if (inputImage == null)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Invalid input image. Expected a bitmap. Check the webcam component.");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Invalid input image - null after processing");
                 return;
             }
-
+            
             // Map model size to model type
             string[] modelTypes = new string[] { "vit_b", "vit_l", "vit_h" };
             if (modelSize >= 0 && modelSize < modelTypes.Length)
