@@ -215,34 +215,72 @@ namespace crft
             // Extract the bitmap from input object
             Bitmap inputImage = null;
             
-            // Handle our custom GH_Bitmap type
-            if (inputObj is GH_Bitmap bitmapGoo)
-            {
-                inputImage = bitmapGoo.Value;
-            }
-            // Handle GH_ObjectWrapper
-            else if (inputObj is Grasshopper.Kernel.Types.GH_ObjectWrapper wrapper)
-            {
-                inputImage = wrapper.Value as Bitmap;
-            }
-            // Direct bitmap
-            else if (inputObj is Bitmap bitmap)
-            {
-                inputImage = bitmap;
-            }
-            // Try to extract from other GH_Goo types
-            else if (inputObj is IGH_Goo goo)
-            {
-                object target = null;
-                if (goo.CastTo<object>(out target) && target is Bitmap bmp)
+            // Log what type of object we received
+            string inputType = inputObj != null ? inputObj.GetType().FullName : "null";
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Received input of type: {inputType}");
+            
+            try {
+                // Handle our custom GH_Bitmap type
+                if (inputObj is GH_Bitmap bitmapGoo)
                 {
-                    inputImage = bmp;
+                    inputImage = bitmapGoo.Value;
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Extracted bitmap from GH_Bitmap: {inputImage.Width}x{inputImage.Height}");
                 }
+                // Handle GH_ObjectWrapper
+                else if (inputObj is Grasshopper.Kernel.Types.GH_ObjectWrapper wrapper)
+                {
+                    if (wrapper.Value is Bitmap wrappedBitmap)
+                    {
+                        inputImage = wrappedBitmap;
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Extracted bitmap from GH_ObjectWrapper: {inputImage.Width}x{inputImage.Height}");
+                    }
+                    else
+                    {
+                        // Log what's in the wrapper
+                        string wrappedType = wrapper.Value != null ? wrapper.Value.GetType().FullName : "null";
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Wrapper contains non-bitmap type: {wrappedType}");
+                    }
+                }
+                // Direct bitmap - this is what the webcam component sends
+                else if (inputObj is Bitmap bitmap)
+                {
+                    inputImage = bitmap;
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Received direct bitmap: {inputImage.Width}x{inputImage.Height}");
+                }
+                // Try to extract from other GH_Goo types
+                else if (inputObj is IGH_Goo goo)
+                {
+                    // Try to cast to bitmap directly 
+                    Bitmap extractedBitmap = null;
+                    if (goo.CastTo(out extractedBitmap) && extractedBitmap != null)
+                    {
+                        inputImage = extractedBitmap;
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Cast IGH_Goo to Bitmap: {inputImage.Width}x{inputImage.Height}");
+                    }
+                    else
+                    {
+                        // Try alternate method
+                        object target = null;
+                        if (goo.CastTo<object>(out target) && target is Bitmap bmp)
+                        {
+                            inputImage = bmp;
+                            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Cast IGH_Goo to object then to Bitmap: {inputImage.Width}x{inputImage.Height}");
+                        }
+                        else
+                        {
+                            AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Failed to cast {goo.TypeName} to Bitmap");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Error extracting bitmap: {ex.Message}");
             }
             
             if (inputImage == null)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Invalid input image. Expected a bitmap.");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Invalid input image. Expected a bitmap. Check the webcam component.");
                 return;
             }
 
