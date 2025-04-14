@@ -54,6 +54,10 @@
               "target": "Package",
               "version": "[8.0.23304.9001, )"
             },
+            "Microsoft.ML.OnnxRuntime": {
+              "target": "Package",
+              "version": "[1.16.3, )"
+            },
             "Microsoft.NETFramework.ReferenceAssemblies.net48": {
               "include": "None",
               "target": "Package",

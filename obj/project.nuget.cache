@@ -1,10 +1,12 @@
 {
   "version": 2,
-  "dgSpecHash": "Cxt9eMfk5Rk=",
+  "dgSpecHash": "f8/wjExb4GM=",
   "success": true,
   "projectFilePath": "/Users/jorgemuyo/Desktop/crft/crft.csproj",
   "expectedPackageFiles": [
     "/Users/jorgemuyo/.nuget/packages/grasshopper/8.0.23304.9001/grasshopper.8.0.23304.9001.nupkg.sha512",
+    "/Users/jorgemuyo/.nuget/packages/microsoft.ml.onnxruntime/1.16.3/microsoft.ml.onnxruntime.1.16.3.nupkg.sha512",
+    "/Users/jorgemuyo/.nuget/packages/microsoft.ml.onnxruntime.managed/1.16.3/microsoft.ml.onnxruntime.managed.1.16.3.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/microsoft.netframework.referenceassemblies.net48/1.0.3/microsoft.netframework.referenceassemblies.net48.1.0.3.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/microsoft.win32.systemevents/7.0.0/microsoft.win32.systemevents.7.0.0.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/opencvsharp4/4.10.0.20241108/opencvsharp4.4.10.0.20241108.nupkg.sha512",
@@ -12,9 +14,9 @@
     "/Users/jorgemuyo/.nuget/packages/system.drawing.common/7.0.0/system.drawing.common.7.0.0.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.memory/4.5.5/system.memory.4.5.5.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.runtime.compilerservices.unsafe/6.0.0/system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
-    "/Users/jorgemuyo/.nuget/packages/microsoft.aspnetcore.app.ref/7.0.20/microsoft.aspnetcore.app.ref.7.0.20.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/microsoft.netcore.app.ref/7.0.20/microsoft.netcore.app.ref.7.0.20.nupkg.sha512",
-    "/Users/jorgemuyo/.nuget/packages/microsoft.windowsdesktop.app.ref/7.0.20/microsoft.windowsdesktop.app.ref.7.0.20.nupkg.sha512"
+    "/Users/jorgemuyo/.nuget/packages/microsoft.windowsdesktop.app.ref/7.0.20/microsoft.windowsdesktop.app.ref.7.0.20.nupkg.sha512",
+    "/Users/jorgemuyo/.nuget/packages/microsoft.aspnetcore.app.ref/7.0.20/microsoft.aspnetcore.app.ref.7.0.20.nupkg.sha512"
   ],
   "logs": []
 }
