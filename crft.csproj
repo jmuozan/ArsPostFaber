@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 	
   <PropertyGroup>
     <!-- Select the framework(s) you wish to target.
@@ -15,6 +15,18 @@
   </PropertyGroup>
   
   <PropertyGroup>
+    <!-- Define WINDOWS on Windows and exclude the Segment-Anything folder -->
+    <DefineConstants Condition="'$(OS)' == 'Windows_NT'">$(DefineConstants);WINDOWS</DefineConstants>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <!-- Exclude Segment-Anything folder from build since it contains WPF code -->
+    <Compile Remove="Segment-Anything\**" />
+    <EmbeddedResource Remove="Segment-Anything\**" />
+    <None Remove="Segment-Anything\**" />
+  </ItemGroup>
+  
+  <PropertyGroup>
     <!-- Specifies information for Assembly and Yak -->
     <Version>1.0</Version>
     <Title>crft</Title>
@@ -24,9 +36,22 @@
   
   <ItemGroup>
     <PackageReference Include="Grasshopper" Version="8.0.23304.9001" ExcludeAssets="runtime" />
-    <PackageReference Include="OpenCvSharp4" Version="4.10.0.20241108" />
+    <PackageReference Include="OpenCvSharp4" Version="4.7.0.20230224" />
+    <PackageReference Include="OpenCvSharp4.runtime.osx.10.15-universal" Version="4.7.0.20230224" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.16.3" />
   </ItemGroup>
+  
+  <ItemGroup>
+    <!-- Include native library for OpenCV -->
+    <None Include="lib/native/libOpenCvSharpExtern.dylib">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  
+  <!-- Use RuntimeIdentifier to ensure native libraries are properly included -->
+  <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">
+    <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
+  </PropertyGroup>
 
   <ItemGroup>
     <!-- AForge references -->
@@ -59,5 +84,12 @@
     <Reference Include="$(PkgMicrosoft_NETFramework_ReferenceAssemblies_net48)\build\.NETFramework\v4.8\System.Windows.Forms.dll" Private="False" />
     <PackageReference Include="System.Drawing.Common" Version="7.0.0" ExcludeAssets="runtime" />
   </ItemGroup>
+  
+  <!-- macOS-specific references - commented out to use mock classes instead
+  <ItemGroup Condition="'$(OS)' != 'Windows_NT'">
+    <PackageReference Include="Xamarin.Mac" Version="1.0.0" />
+    <PackageReference Include="Xamarin.Essentials" Version="1.7.5" />
+  </ItemGroup>
+  -->
 
 </Project>

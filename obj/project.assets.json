@@ -235,7 +235,7 @@
           }
         }
       },
-      "OpenCvSharp4/4.10.0.20241108": {
+      "OpenCvSharp4/4.8.0.20230708": {
         "type": "package",
         "dependencies": {
           "System.Memory": "4.5.5",
@@ -249,6 +249,19 @@
         "runtime": {
           "lib/net6.0/OpenCvSharp.dll": {
             "related": ".xml"
+          }
+        }
+      },
+      "OpenCvSharp4.runtime.osx.10.15-universal/4.7.0.20230224": {
+        "type": "package",
+        "runtimeTargets": {
+          "runtimes/osx-arm64/native/libOpenCvSharpExtern.dylib": {
+            "assetType": "native",
+            "rid": "osx-arm64"
+          },
+          "runtimes/osx-x64/native/libOpenCvSharpExtern.dylib": {
+            "assetType": "native",
+            "rid": "osx-x64"
           }
         }
       },
@@ -298,6 +311,174 @@
             "assetType": "runtime",
             "rid": "win"
           }
+        }
+      },
+      "System.Memory/4.5.5": {
+        "type": "package",
+        "compile": {
+          "ref/netcoreapp2.1/_._": {}
+        },
+        "runtime": {
+          "lib/netcoreapp2.1/_._": {}
+        }
+      },
+      "System.Runtime.CompilerServices.Unsafe/6.0.0": {
+        "type": "package",
+        "compile": {
+          "lib/net6.0/System.Runtime.CompilerServices.Unsafe.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net6.0/System.Runtime.CompilerServices.Unsafe.dll": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "buildTransitive/netcoreapp3.1/_._": {}
+        }
+      }
+    },
+    "net7.0/osx-arm64": {
+      "Grasshopper/8.0.23304.9001": {
+        "type": "package",
+        "dependencies": {
+          "RhinoCommon": "[8.0.23304.9001]"
+        },
+        "compile": {
+          "lib/net48/GH_IO.dll": {
+            "related": ".xml"
+          },
+          "lib/net48/Grasshopper.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net48/_._": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "build/net48/Grasshopper.targets": {}
+        }
+      },
+      "Microsoft.ML.OnnxRuntime/1.16.3": {
+        "type": "package",
+        "dependencies": {
+          "Microsoft.ML.OnnxRuntime.Managed": "1.16.3"
+        },
+        "native": {
+          "runtimes/osx-arm64/native/libonnxruntime.dylib": {}
+        },
+        "build": {
+          "build/netstandard2.0/Microsoft.ML.OnnxRuntime.props": {},
+          "build/netstandard2.0/Microsoft.ML.OnnxRuntime.targets": {}
+        }
+      },
+      "Microsoft.ML.OnnxRuntime.Managed/1.16.3": {
+        "type": "package",
+        "dependencies": {
+          "System.Memory": "4.5.5"
+        },
+        "compile": {
+          "lib/net6.0/Microsoft.ML.OnnxRuntime.dll": {
+            "related": ".pdb"
+          }
+        },
+        "runtime": {
+          "lib/net6.0/Microsoft.ML.OnnxRuntime.dll": {
+            "related": ".pdb"
+          }
+        },
+        "build": {
+          "build/netstandard2.0/Microsoft.ML.OnnxRuntime.Managed.targets": {}
+        }
+      },
+      "Microsoft.NETFramework.ReferenceAssemblies.net48/1.0.3": {
+        "type": "package",
+        "build": {
+          "build/_._": {}
+        }
+      },
+      "Microsoft.Win32.SystemEvents/7.0.0": {
+        "type": "package",
+        "compile": {
+          "lib/net7.0/Microsoft.Win32.SystemEvents.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net7.0/_._": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "buildTransitive/net6.0/_._": {}
+        }
+      },
+      "OpenCvSharp4/4.8.0.20230708": {
+        "type": "package",
+        "dependencies": {
+          "System.Memory": "4.5.5",
+          "System.Runtime.CompilerServices.Unsafe": "6.0.0"
+        },
+        "compile": {
+          "lib/net6.0/OpenCvSharp.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net6.0/OpenCvSharp.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "OpenCvSharp4.runtime.osx.10.15-universal/4.7.0.20230224": {
+        "type": "package",
+        "native": {
+          "runtimes/osx-arm64/native/libOpenCvSharpExtern.dylib": {}
+        }
+      },
+      "RhinoCommon/8.0.23304.9001": {
+        "type": "package",
+        "compile": {
+          "lib/net48/Ed.Eto.dll": {
+            "related": ".xml"
+          },
+          "lib/net48/Eto.dll": {
+            "related": ".xml"
+          },
+          "lib/net48/Rhino.UI.dll": {},
+          "lib/net48/RhinoCommon.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net48/_._": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "build/net48/RhinoCommon.targets": {}
+        }
+      },
+      "System.Drawing.Common/7.0.0": {
+        "type": "package",
+        "dependencies": {
+          "Microsoft.Win32.SystemEvents": "7.0.0"
+        },
+        "compile": {
+          "lib/net7.0/System.Drawing.Common.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net7.0/_._": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "buildTransitive/net6.0/_._": {}
         }
       },
       "System.Memory/4.5.5": {
@@ -868,10 +1049,10 @@
         "useSharedDesignerContext.txt"
       ]
     },
-    "OpenCvSharp4/4.10.0.20241108": {
-      "sha512": "4Lw57NQzOaR0fi9et7GMWB1rpdGzGuNgXHXy45Gltvt8SizQLOGufUonNF9Z+9mo3dcwGC/mL4w5NBgJCqZdHQ==",
+    "OpenCvSharp4/4.8.0.20230708": {
+      "sha512": "MmZqvNUJuTUWQfkyXN1NOxJjx6JNfaedMOnY0dAdP5zgaKMAsxwwX5pkZl/F40JheSo3oMJhI7nhDC3kh7/ISQ==",
       "type": "package",
-      "path": "opencvsharp4/4.10.0.20241108",
+      "path": "opencvsharp4/4.8.0.20230708",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -883,8 +1064,21 @@
         "lib/netstandard2.0/OpenCvSharp.xml",
         "lib/netstandard2.1/OpenCvSharp.dll",
         "lib/netstandard2.1/OpenCvSharp.xml",
-        "opencvsharp4.4.10.0.20241108.nupkg.sha512",
+        "opencvsharp4.4.8.0.20230708.nupkg.sha512",
         "opencvsharp4.nuspec"
+      ]
+    },
+    "OpenCvSharp4.runtime.osx.10.15-universal/4.7.0.20230224": {
+      "sha512": "i2YPZ4eUNW2cHNS0rOzIzTPcYBOpXQ8GUPd83mEFglS2hBU78+6mrGPIIJHmHoisFyqxVH54BisDMnpOoUll+g==",
+      "type": "package",
+      "path": "opencvsharp4.runtime.osx.10.15-universal/4.7.0.20230224",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "opencvsharp4.runtime.osx.10.15-universal.4.7.0.20230224.nupkg.sha512",
+        "opencvsharp4.runtime.osx.10.15-universal.nuspec",
+        "runtimes/osx-arm64/native/libOpenCvSharpExtern.dylib",
+        "runtimes/osx-x64/native/libOpenCvSharpExtern.dylib"
       ]
     },
     "RhinoCommon/8.0.23304.9001": {
@@ -999,7 +1193,8 @@
       "Grasshopper >= 8.0.23304.9001",
       "Microsoft.ML.OnnxRuntime >= 1.16.3",
       "Microsoft.NETFramework.ReferenceAssemblies.net48 >= 1.0.3",
-      "OpenCvSharp4 >= 4.10.0.20241108",
+      "OpenCvSharp4 >= 4.7.0.20230224",
+      "OpenCvSharp4.runtime.osx.10.15-universal >= 4.7.0.20230224",
       "System.Drawing.Common >= 7.0.0"
     ]
   },
@@ -1068,7 +1263,11 @@
           },
           "OpenCvSharp4": {
             "target": "Package",
-            "version": "[4.10.0.20241108, )"
+            "version": "[4.7.0.20230224, )"
+          },
+          "OpenCvSharp4.runtime.osx.10.15-universal": {
+            "target": "Package",
+            "version": "[4.7.0.20230224, )"
           },
           "System.Drawing.Common": {
             "include": "Compile, Build, Native, ContentFiles, Analyzers, BuildTransitive",
@@ -1108,6 +1307,24 @@
         },
         "runtimeIdentifierGraphPath": "/opt/homebrew/Cellar/dotnet/9.0.101/libexec/sdk/9.0.101/RuntimeIdentifierGraph.json"
       }
+    },
+    "runtimes": {
+      "osx-arm64": {
+        "#import": []
+      }
     }
-  }
+  },
+  "logs": [
+    {
+      "code": "NU1603",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "crft depends on OpenCvSharp4 (>= 4.7.0.20230224) but OpenCvSharp4 4.7.0.20230224 was not found. OpenCvSharp4 4.8.0.20230708 was resolved instead.",
+      "libraryId": "OpenCvSharp4",
+      "targetGraphs": [
+        "net7.0",
+        "net7.0/osx-arm64"
+      ]
+    }
+  ]
 }

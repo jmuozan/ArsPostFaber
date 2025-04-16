@@ -11,7 +11,8 @@
           "Grasshopper": "8.0.23304.9001",
           "Microsoft.ML.OnnxRuntime": "1.16.3",
           "Microsoft.NETFramework.ReferenceAssemblies.net48": "1.0.3",
-          "OpenCvSharp4": "4.10.0.20241108",
+          "OpenCvSharp4": "4.8.0.20230708",
+          "OpenCvSharp4.runtime.osx.10.15-universal": "4.7.0.20230224",
           "System.Drawing.Common": "7.0.0"
         },
         "runtime": {
@@ -233,7 +234,7 @@
       },
       "Microsoft.NETFramework.ReferenceAssemblies.net48/1.0.3": {},
       "Microsoft.Win32.SystemEvents/7.0.0": {},
-      "OpenCvSharp4/4.10.0.20241108": {
+      "OpenCvSharp4/4.8.0.20230708": {
         "dependencies": {
           "System.Memory": "4.5.5",
           "System.Runtime.CompilerServices.Unsafe": "6.0.0"
@@ -242,6 +243,20 @@
           "lib/net6.0/OpenCvSharp.dll": {
             "assemblyVersion": "1.0.0.0",
             "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "OpenCvSharp4.runtime.osx.10.15-universal/4.7.0.20230224": {
+        "runtimeTargets": {
+          "runtimes/osx-arm64/native/libOpenCvSharpExtern.dylib": {
+            "rid": "osx-arm64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
+          },
+          "runtimes/osx-x64/native/libOpenCvSharpExtern.dylib": {
+            "rid": "osx-x64",
+            "assetType": "native",
+            "fileVersion": "0.0.0.0"
           }
         }
       },
@@ -296,12 +311,19 @@
       "path": "microsoft.win32.systemevents/7.0.0",
       "hashPath": "microsoft.win32.systemevents.7.0.0.nupkg.sha512"
     },
-    "OpenCvSharp4/4.10.0.20241108": {
+    "OpenCvSharp4/4.8.0.20230708": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-4Lw57NQzOaR0fi9et7GMWB1rpdGzGuNgXHXy45Gltvt8SizQLOGufUonNF9Z+9mo3dcwGC/mL4w5NBgJCqZdHQ==",
-      "path": "opencvsharp4/4.10.0.20241108",
-      "hashPath": "opencvsharp4.4.10.0.20241108.nupkg.sha512"
+      "sha512": "sha512-MmZqvNUJuTUWQfkyXN1NOxJjx6JNfaedMOnY0dAdP5zgaKMAsxwwX5pkZl/F40JheSo3oMJhI7nhDC3kh7/ISQ==",
+      "path": "opencvsharp4/4.8.0.20230708",
+      "hashPath": "opencvsharp4.4.8.0.20230708.nupkg.sha512"
+    },
+    "OpenCvSharp4.runtime.osx.10.15-universal/4.7.0.20230224": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-i2YPZ4eUNW2cHNS0rOzIzTPcYBOpXQ8GUPd83mEFglS2hBU78+6mrGPIIJHmHoisFyqxVH54BisDMnpOoUll+g==",
+      "path": "opencvsharp4.runtime.osx.10.15-universal/4.7.0.20230224",
+      "hashPath": "opencvsharp4.runtime.osx.10.15-universal.4.7.0.20230224.nupkg.sha512"
     },
     "RhinoCommon/8.0.23304.9001": {
       "type": "package",

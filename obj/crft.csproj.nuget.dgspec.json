@@ -66,7 +66,11 @@
             },
             "OpenCvSharp4": {
               "target": "Package",
-              "version": "[4.10.0.20241108, )"
+              "version": "[4.7.0.20230224, )"
+            },
+            "OpenCvSharp4.runtime.osx.10.15-universal": {
+              "target": "Package",
+              "version": "[4.7.0.20230224, )"
             },
             "System.Drawing.Common": {
               "include": "Compile, Build, Native, ContentFiles, Analyzers, BuildTransitive",
@@ -105,6 +109,11 @@
             }
           },
           "runtimeIdentifierGraphPath": "/opt/homebrew/Cellar/dotnet/9.0.101/libexec/sdk/9.0.101/RuntimeIdentifierGraph.json"
+        }
+      },
+      "runtimes": {
+        "osx-arm64": {
+          "#import": []
         }
       }
     }
