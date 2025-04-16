@@ -87,6 +87,72 @@ if [ -d "$MASKS_DIR" ] && [ "$(ls -A "$MASKS_DIR" 2>/dev/null)" ]; then
     $PYTHON_CMD "$MODIFIED_MASKING_SCRIPT"
     
     echo "Masking complete! Masked frames saved to: $OUTPUT_DIR"
+    
+    # Run 3D reconstruction if masked frames were created
+    if [ -d "$OUTPUT_DIR" ] && [ "$(ls -A "$OUTPUT_DIR" 2>/dev/null)" ]; then
+        RECONSTRUCTION_DIR="$FRAMES_DIR/reconstruction"
+        mkdir -p "$RECONSTRUCTION_DIR"
+        
+        echo "Starting 3D reconstruction from masked frames..."
+        
+        # Set environment variables for the reconstruction script
+        export MASKED_IMAGES_DIR="$OUTPUT_DIR"
+        export RECONSTRUCTION_OUTPUT_DIR="$RECONSTRUCTION_DIR"
+        
+        # Run reconstruction script
+        RECONSTRUCTION_SCRIPT="$SCRIPT_DIR/segmentanything/4_reconstruction.py"
+        if [ -f "$RECONSTRUCTION_SCRIPT" ]; then
+            echo "Running 3D reconstruction script..."
+            
+            # First try COLMAP directly
+            if command -v colmap &>/dev/null; then
+                echo "COLMAP found, using native COLMAP method..."
+                PLY_PATH=$($PYTHON_CMD "$RECONSTRUCTION_SCRIPT" --method colmap --image_dir "$OUTPUT_DIR" --output_dir "$RECONSTRUCTION_DIR")
+            else
+                # Fall back to pycolmap
+                echo "COLMAP not found, trying pycolmap method..."
+                PLY_PATH=$($PYTHON_CMD "$RECONSTRUCTION_SCRIPT" --method pycolmap --image_dir "$OUTPUT_DIR" --output_dir "$RECONSTRUCTION_DIR")
+            fi
+            
+            # Check if reconstruction was successful by looking for the result file
+            RESULT_FILE="$RECONSTRUCTION_DIR/result_ply_path.txt"
+            if [ -f "$RESULT_FILE" ]; then
+                PLY_PATH=$(cat "$RESULT_FILE")
+                echo "3D reconstruction complete! Results saved to: $PLY_PATH"
+                
+                # Create a symbolic link to make it easier to find
+                ln -sf "$PLY_PATH" "$RECONSTRUCTION_DIR/model.ply"
+                echo "Created symbolic link at: $RECONSTRUCTION_DIR/model.ply"
+            else
+                echo "3D reconstruction completed but no result file found."
+                
+                # Look for any PLY files
+                PLY_FILES=$(find "$RECONSTRUCTION_DIR" -name "*.ply")
+                if [ -n "$PLY_FILES" ]; then
+                    echo "Found these PLY files:"
+                    echo "$PLY_FILES"
+                    
+                    # Create a symbolic link to the first one
+                    FIRST_PLY=$(echo "$PLY_FILES" | head -n1)
+                    ln -sf "$FIRST_PLY" "$RECONSTRUCTION_DIR/model.ply"
+                    echo "Created symbolic link at: $RECONSTRUCTION_DIR/model.ply"
+                else
+                    echo "No PLY files found in the reconstruction directory."
+                    
+                    # Create an empty PLY file as fallback
+                    EMPTY_PLY="$RECONSTRUCTION_DIR/empty.ply"
+                    echo "ply
+format ascii 1.0
+element vertex 0
+end_header" > "$EMPTY_PLY"
+                    echo "Created empty PLY file: $EMPTY_PLY"
+                    ln -sf "$EMPTY_PLY" "$RECONSTRUCTION_DIR/model.ply"
+                fi
+            fi
+        else
+            echo "Reconstruction script not found at: $RECONSTRUCTION_SCRIPT"
+        fi
+    fi
 else
     echo "No segmentation masks found. Please complete the segmentation process in the UI."
 fi
@@ -95,6 +161,9 @@ echo "Processing complete!"
 echo "Output saved to: $FRAMES_DIR/segmentation_output"
 if [ -d "$OUTPUT_DIR" ] && [ "$(ls -A "$OUTPUT_DIR" 2>/dev/null)" ]; then
     echo "Masked frames saved to: $OUTPUT_DIR"
+    if [ -d "$RECONSTRUCTION_DIR" ]; then
+        echo "3D reconstruction saved to: $RECONSTRUCTION_DIR"
+    fi
 fi
 
 echo "Press Enter to close..."
