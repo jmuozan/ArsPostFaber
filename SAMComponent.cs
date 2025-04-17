@@ -13,9 +13,9 @@ namespace crft
     public class SAMComponent : GH_Component
     {
         private bool _isProcessing = false;
-        private Mesh _plyMesh = null;
         private string _lastPlyPath = null;
-        private List<Point3d> _plyPoints = null;
+        private List<Point3d> _plyPoints = new List<Point3d>();
+        private Mesh _plyMesh = null;
         
         public SAMComponent()
           : base("SAM UI", "SAM",
@@ -35,11 +35,8 @@ namespace crft
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
         {
             pManager.AddTextParameter("Status", "S", "Processing status", GH_ParamAccess.item);
-            pManager.AddTextParameter("Masks Path", "M", "Path to segmentation masks", GH_ParamAccess.item);
-            pManager.AddTextParameter("Masked Frames", "O", "Path to masked output frames", GH_ParamAccess.item);
-            pManager.AddTextParameter("3D Model", "3D", "Path to 3D reconstruction", GH_ParamAccess.item);
-            pManager.AddMeshParameter("Mesh", "Mesh", "Reconstructed 3D mesh", GH_ParamAccess.item);
-            pManager.AddPointParameter("Points", "Pts", "Point cloud from 3D reconstruction", GH_ParamAccess.list);
+            pManager.AddTextParameter("Output Path", "O", "Path to output directory with masked frames", GH_ParamAccess.item);
+            pManager.AddPointParameter("Points", "P", "Point cloud from 3D reconstruction", GH_ParamAccess.list);
         }
         
         /// <summary>
@@ -555,119 +552,66 @@ namespace crft
             // Compute output directory paths
             string videoFileName = Path.GetFileNameWithoutExtension(videoPath);
             string framesDir = Path.Combine("/tmp", $"frames_{videoFileName}");
-            string masksDir = Path.Combine(framesDir, "segmentation_output", "masks");
             string maskedOutputDir = Path.Combine(framesDir, "masking_output");
             string reconstructionDir = Path.Combine(framesDir, "reconstruction");
             string plyFilePath = Path.Combine(reconstructionDir, "model.ply");
             
-            DA.SetData(1, masksDir);
-            DA.SetData(2, maskedOutputDir);
-            DA.SetData(3, plyFilePath);
+            DA.SetData(1, maskedOutputDir);
             
             // Check if the PLY file exists and load it if it's a new file
-            if (File.Exists(plyFilePath) && (_plyPoints == null || _plyMesh == null || plyFilePath != _lastPlyPath))
+            if (File.Exists(plyFilePath) && (plyFilePath != _lastPlyPath || _plyPoints.Count == 0))
             {
                 try
                 {
-                    // Parse points directly from the PLY file first - this is more reliable
+                    // Parse points directly from the PLY file
                     _plyPoints = ParsePointsFromPlyFile(plyFilePath);
-                    
-                    // Also try to parse the mesh (this might fail but we have the points as backup)
-                    try {
-                        _plyMesh = ParsePlyFile(plyFilePath);
-                    } catch (Exception meshEx) {
-                        Debug.WriteLine($"Error parsing mesh (using points instead): {meshEx.Message}");
-                        _plyMesh = null;
-                    }
-                    
                     _lastPlyPath = plyFilePath;
                     
-                    // Output the points (more reliable than mesh)
-                    if (_plyPoints != null && _plyPoints.Count > 0)
+                    // Always output the points, even if empty
+                    if (_plyPoints.Count > 0)
                     {
-                        DA.SetDataList(5, _plyPoints);
-                        DA.SetData(0, $"Loaded {_plyPoints.Count} points from PLY file");
+                        DA.SetDataList(2, _plyPoints);
+                        DA.SetData(0, $"Loaded {_plyPoints.Count} points from 3D reconstruction");
                     }
                     else
                     {
-                        // Create a single default point
-                        List<Point3d> defaultPoints = new List<Point3d> { new Point3d(0, 0, 0) };
-                        DA.SetDataList(5, defaultPoints);
-                        DA.SetData(0, "No points found in PLY file. Created default point");
-                    }
-                    
-                    // Try to output the mesh if it was loaded successfully
-                    if (_plyMesh != null && _plyMesh.IsValid && _plyMesh.Vertices.Count > 0)
-                    {
-                        DA.SetData(4, _plyMesh);
-                    }
-                    else if (_plyPoints != null && _plyPoints.Count > 0)
-                    {
-                        // If we have points but no valid mesh, create a simple point-based mesh
-                        Mesh simpleMesh = new Mesh();
+                        // Create a default point if no points were found
+                        List<Point3d> defaultPoints = new List<Point3d>();
+                        defaultPoints.Add(new Point3d(0, 0, 0));
+                        defaultPoints.Add(new Point3d(1, 0, 0));
+                        defaultPoints.Add(new Point3d(0, 1, 0));
                         
-                        // Use a subset of points if there are too many to avoid performance issues
-                        int step = Math.Max(1, _plyPoints.Count / 1000);
-                        
-                        for (int i = 0; i < _plyPoints.Count; i += step)
-                        {
-                            simpleMesh.Vertices.Add(new Point3f(
-                                (float)_plyPoints[i].X, 
-                                (float)_plyPoints[i].Y, 
-                                (float)_plyPoints[i].Z
-                            ));
-                        }
-                        
-                        // Add some simple triangles to make points visible
-                        for (int i = 0; i < simpleMesh.Vertices.Count - 2; i += 3)
-                        {
-                            if (i + 2 < simpleMesh.Vertices.Count)
-                            {
-                                simpleMesh.Faces.AddFace(i, i+1, i+2);
-                            }
-                        }
-                        
-                        _plyMesh = simpleMesh;
-                        DA.SetData(4, _plyMesh);
-                    }
-                    else
-                    {
-                        // Create a default mesh if nothing else worked
-                        _plyMesh = CreateDefaultMesh();
-                        DA.SetData(4, _plyMesh);
+                        DA.SetDataList(2, defaultPoints);
+                        DA.SetData(0, "No points found in reconstruction. Using default points.");
                     }
                 }
                 catch (Exception ex)
                 {
                     // Log the error
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Error loading PLY: {ex.Message}");
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Error loading points: {ex.Message}");
                     
-                    // Create default outputs
-                    _plyMesh = CreateDefaultMesh();
-                    DA.SetData(4, _plyMesh);
+                    // Create a default point
+                    List<Point3d> defaultPoints = new List<Point3d>();
+                    defaultPoints.Add(new Point3d(0, 0, 0));
+                    DA.SetDataList(2, defaultPoints);
                     
-                    List<Point3d> defaultPoints = new List<Point3d> { new Point3d(0, 0, 0) };
-                    DA.SetDataList(5, defaultPoints);
-                    
-                    DA.SetData(0, $"Error loading PLY: {ex.Message}");
+                    DA.SetData(0, $"Error loading points: {ex.Message}");
                 }
             }
-            else if (_plyPoints != null && _plyPoints.Count > 0)
+            else if (_plyPoints.Count > 0)
             {
-                // Use the previously loaded points and mesh
-                DA.SetDataList(5, _plyPoints);
-                
-                if (_plyMesh != null)
-                {
-                    DA.SetData(4, _plyMesh);
-                }
-                
-                DA.SetData(0, $"Using previously loaded {_plyPoints.Count} points from PLY file");
+                // Use the previously loaded points
+                DA.SetDataList(2, _plyPoints);
+                DA.SetData(0, $"Using {_plyPoints.Count} points from 3D reconstruction");
             }
             else
             {
+                // Make sure Points output is never null
+                List<Point3d> emptyPoints = new List<Point3d>();
+                DA.SetDataList(2, emptyPoints);
+                
                 // No data loaded yet
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "No 3D data available yet. Set Run to True to process the video.");
+                DA.SetData(0, "No 3D data available yet. Set Run to True to process the video.");
             }
             
             if (run && !_isProcessing)
