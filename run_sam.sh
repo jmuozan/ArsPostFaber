@@ -1,6 +1,9 @@
 #!/bin/bash
 # Simple shell script to run SAM on a video
 
+# Unset PYTHONHOME to avoid environment conflicts
+unset PYTHONHOME
+
 if [ $# -lt 1 ]; then
   echo "Usage: $0 <video_path> [framerate]"
   exit 1
