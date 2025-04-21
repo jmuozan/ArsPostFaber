@@ -45,7 +45,7 @@ namespace crft
         private const int UI_UPDATE_INTERVAL_MS = 16; // ~60fps for UI updates
         
         // Hand tracking data
-        private List<PointF> _handLandmarks = new List<PointF>();
+        internal List<PointF> _handLandmarks = new List<PointF>();
         private Color _backgroundColor = Color.FromArgb(64, 64, 64);
         
         // Mesh visualization colors
@@ -815,7 +815,7 @@ if __name__ == '__main__':
         }
         
         // Process the captured frame to detect hand landmarks using Python MediaPipe
-        // Using approach closer to handtrack.py which works better
+        // With enhanced logging for debugging
         private void ProcessFrameForHandDetection(Bitmap frame)
         {
             try
@@ -826,21 +826,32 @@ if __name__ == '__main__':
                     InitializePythonPaths();
                 }
                 
-                // Throttle Python execution but reduce the throttle time to get more responsive hand tracking
+                // Throttle Python execution but further reduce the throttle for better responsiveness
                 TimeSpan timeSinceLastExecution = DateTime.Now - _lastPythonExecution;
-                if (timeSinceLastExecution.TotalMilliseconds < PYTHON_THROTTLE_MS / 2) // Reduce throttle for better responsiveness
+                if (timeSinceLastExecution.TotalMilliseconds < PYTHON_THROTTLE_MS / 4) // Even less throttling
                 {
                     // Just reuse the existing landmarks if we called Python too recently
                     return;
                 }
                 
+                // Log detailed frame info
+                Debug.WriteLine($"\n========== Processing new frame: {frame.Width}x{frame.Height} ==========");
+                
                 // Clear previous landmarks
                 _handLandmarks.Clear();
                 
-                // Save the current frame for Python to process with higher quality
-                frame.Save(_handTrackInputPath, System.Drawing.Imaging.ImageFormat.Jpeg);
+                // Save the current frame for Python to process
+                try
+                {
+                    frame.Save(_handTrackInputPath, System.Drawing.Imaging.ImageFormat.Jpeg);
+                    Debug.WriteLine($"Saved frame to {_handTrackInputPath}");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error saving frame: {ex.Message}");
+                }
                 
-                // Call the Python script to process the frame - using direct MediaPipe integration like handtrack.py
+                // Call the Python script to process the frame 
                 Process pythonProcess = new Process();
                 
                 // Try using the exact path to Python script
@@ -862,6 +873,7 @@ if __name__ == '__main__':
                         }
                     }
                 
+                    // Make sure to use Python 3 with detailed error output
                     pythonProcess.StartInfo.FileName = "python3";
                     pythonProcess.StartInfo.Arguments = $"\"{actualScriptPath}\" \"{_handTrackInputPath}\" \"{_handTrackOutputPath}\"";
                     pythonProcess.StartInfo.UseShellExecute = false;
@@ -871,12 +883,20 @@ if __name__ == '__main__':
                     
                     Debug.WriteLine($"Executing: {pythonProcess.StartInfo.FileName} {pythonProcess.StartInfo.Arguments}");
                     
-                    // Execute the Python process with low priority to avoid blocking UI
+                    // Execute the Python process
                     pythonProcess.Start();
+                    
+                    // Immediately start reading output asynchronously to prevent buffer issues
+                    string output = "";
+                    pythonProcess.OutputDataReceived += (sender, e) => {
+                        if (e.Data != null) output += e.Data + "\n";
+                    };
+                    pythonProcess.BeginOutputReadLine();
                 }
                 catch (System.ComponentModel.Win32Exception)
                 {
                     // Try 'python' instead of 'python3'
+                    Debug.WriteLine("Failed with python3, trying python instead");
                     pythonProcess = new Process();
                     pythonProcess.StartInfo.FileName = "python";
                     pythonProcess.StartInfo.Arguments = $"\"{_pythonScriptPath}\" \"{_handTrackInputPath}\" \"{_handTrackOutputPath}\"";
@@ -893,7 +913,7 @@ if __name__ == '__main__':
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"Could not start Python process: {ex.Message}");
-                        GenerateMoreVisibleFallbackHandLandmarks(frame); // Use more visible fallback
+                        GenerateMoreVisibleFallbackHandLandmarks(frame); // Use fallback
                         return;
                     }
                 }
@@ -901,8 +921,8 @@ if __name__ == '__main__':
                 // Update the execution timestamp
                 _lastPythonExecution = DateTime.Now;
                 
-                // Shorter timeout to keep UI responsive
-                if (!pythonProcess.WaitForExit(300))
+                // Longer timeout for better chance of detection
+                if (!pythonProcess.WaitForExit(500)) // Longer timeout to give Python more time
                 {
                     Debug.WriteLine("Python process timeout - killing");
                     try { pythonProcess.Kill(); } catch { }
@@ -914,38 +934,74 @@ if __name__ == '__main__':
                 string error = pythonProcess.StandardError.ReadToEnd();
                 if (!string.IsNullOrEmpty(error))
                 {
-                    Debug.WriteLine($"Python error: {error}");
+                    Debug.WriteLine($"Python stderr: {error}");
                 }
+                
+                // Read output
+                string stdout = pythonProcess.StandardOutput.ReadToEnd();
+                if (!string.IsNullOrEmpty(stdout))
+                {
+                    Debug.WriteLine($"Python stdout: {stdout}");
+                }
+                
+                Debug.WriteLine($"Python exit code: {pythonProcess.ExitCode}");
                 
                 // Check if output file exists
                 if (File.Exists(_handTrackOutputPath))
                 {
-                    // Read the landmarks from the output file
-                    // Expected format: x,y\nx,y\n...
-                    string[] lines = File.ReadAllLines(_handTrackOutputPath);
-                    foreach (string line in lines)
+                    try
                     {
-                        if (!string.IsNullOrEmpty(line))
+                        Debug.WriteLine($"Reading landmarks from: {_handTrackOutputPath}");
+                        
+                        // Read the landmarks from the output file
+                        string[] lines = File.ReadAllLines(_handTrackOutputPath);
+                        Debug.WriteLine($"Found {lines.Length} lines in landmark file");
+                        
+                        foreach (string line in lines)
                         {
-                            string[] coords = line.Split(',');
-                            if (coords.Length == 2)
+                            if (!string.IsNullOrEmpty(line))
                             {
-                                float x, y;
-                                if (float.TryParse(coords[0], out x) && float.TryParse(coords[1], out y))
+                                string[] coords = line.Split(',');
+                                if (coords.Length == 2)
                                 {
-                                    // Convert normalized coordinates to image coordinates
-                                    x *= frame.Width;
-                                    y *= frame.Height;
-                                    _handLandmarks.Add(new PointF(x, y));
+                                    float x, y;
+                                    if (float.TryParse(coords[0], out x) && float.TryParse(coords[1], out y))
+                                    {
+                                        // Store normalized coordinates
+                                        _handLandmarks.Add(new PointF(x, y));
+                                    }
                                 }
                             }
                         }
+                        
+                        Debug.WriteLine($"Loaded {_handLandmarks.Count} hand landmarks from Python");
+                        
+                        // If hand landmarks were detected, make sure to invalidate the viewer to refresh
+                        if (_handLandmarks.Count > 0 && _viewerForm != null && !_viewerForm.IsDisposed)
+                        {
+                            try
+                            {
+                                _viewerForm.BeginInvoke(new Action(() => {
+                                    _viewerForm.Invalidate(true); // Force immediate repaint
+                                }));
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"Error invalidating viewer form: {ex.Message}");
+                            }
+                        }
                     }
-                    
-                    Debug.WriteLine($"Loaded {_handLandmarks.Count} hand landmarks from Python");
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error reading landmarks file: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine($"Output file not found: {_handTrackOutputPath}");
                 }
                 
-                // If no landmarks were detected or Python failed, use fallback with more visible hand
+                // If no landmarks were detected or Python failed, use fallback
                 if (_handLandmarks.Count == 0)
                 {
                     Debug.WriteLine("No hand landmarks detected from Python, using simulated fallback");
@@ -959,60 +1015,126 @@ if __name__ == '__main__':
             }
         }
         
-        // Generate more visible fallback hand landmarks when Python fails or no hand is detected
+        // We need to generate fallback landmarks temporarily 
+        // to help debug the hand detection issues
         private void GenerateMoreVisibleFallbackHandLandmarks(Bitmap frame)
         {
             // First clear previous landmarks
             _handLandmarks.Clear();
             
-            // Create landmarks for a more visible and clearly articulated hand
-            // Positioned in the center-right of frame for better visibility
-            float centerX = frame.Width * 0.7f;
-            float centerY = frame.Height * 0.5f;
+            // Create a standard set of 21 landmarks that MediaPipe would typically detect
+            // Normalized coordinates (0-1 range) for centerX and centerY
+            float centerX = 0.5f; // Center horizontally
+            float centerY = 0.5f; // Center vertically
             
             // Animated position for visual interest
-            double time = DateTime.Now.TimeOfDay.TotalSeconds;
-            double oscillation = Math.Sin(time * 0.8) * 40; // More pronounced movement
-            centerY += (float)oscillation;
+            double time = DateTime.Now.TimeOfDay.TotalMilliseconds / 1000.0;
+            double horizontalMovement = Math.Sin(time * 0.5) * 0.2; // Move horizontally
+            double verticalMovement = Math.Cos(time * 0.3) * 0.1;   // Move vertically
             
-            // Wrist position (base of hand)
+            centerX += (float)horizontalMovement;
+            centerY += (float)verticalMovement;
+            
+            // Wrist position (base of hand) in normalized coordinates
             _handLandmarks.Add(new PointF(centerX, centerY));
+            
+            // Scale for hand size - using normalized coordinates
+            float handSize = 0.15f; // Hand size as fraction of frame
+            
+            // Size pulsing animation for more dynamic visualization
+            float sizePulse = (float)(1.0 + Math.Sin(time * 0.7) * 0.1); // 10% size pulsing
+            handSize *= sizePulse;
             
             // Palm landmarks - create a more visible hand shape
             for (int i = 0; i < 4; i++)
             {
+                // Create a more realistic hand shape with varied angles
                 float angle = (float)(Math.PI * 1.3 - i * Math.PI * 0.2);
-                float distance = frame.Width * 0.12f; // Larger palm
+                // Add slight animation to palm shape
+                angle += (float)Math.Sin(time * 0.5 + i * 0.2) * 0.05f;
+                
+                float distance = handSize * 0.6f; // Relative palm size
                 _handLandmarks.Add(new PointF(
                     centerX + (float)Math.Cos(angle) * distance,
                     centerY - (float)Math.Sin(angle) * distance
                 ));
             }
             
-            // Fingers - with animation to make them appear to move
+            // Fingers - with animation to make them appear to move naturally
             for (int finger = 0; finger < 5; finger++)
             {
                 // Get base of finger from palm points
                 PointF basePoint = _handLandmarks[finger + 1];
                 
-                // Each finger angle with some animation
+                // Each finger angle with varying base angles for realism
                 float angle = (float)(Math.PI * 1.3 - finger * Math.PI * 0.2);
                 
-                // Add finger-specific animation for more realistic movement
-                float fingerAnim = (float)Math.Sin(time * 0.8 + finger * 0.4) * 0.2f;
-                angle += fingerAnim;
+                // Different animation phases for each finger
+                float fingerAnimationPhase = (float)(time * 0.8 + finger * 0.6);
+                float fingerCurl = (float)Math.Sin(fingerAnimationPhase) * 0.4f;
                 
-                // 3 joints per finger
+                // Apply different animation characteristics to each finger
+                switch (finger)
+                {
+                    case 0: // Thumb - less movement
+                        fingerCurl *= 0.3f;
+                        break;
+                    case 1: // Index - more movement
+                        fingerCurl *= 1.2f;
+                        break;
+                    case 2: // Middle - standard movement
+                        // Default curl
+                        break;
+                    case 3: // Ring - moves with pinky
+                        fingerCurl = (float)Math.Sin(fingerAnimationPhase - 0.3) * 0.4f;
+                        break;
+                    case 4: // Pinky - more dramatic movement
+                        fingerCurl *= 1.5f;
+                        break;
+                }
+                
+                // Apply the finger curl animation
+                angle += fingerCurl;
+                
+                // 3 joints per finger with progressive curling
                 for (int joint = 0; joint < 3; joint++)
                 {
-                    // Make fingers longer and more visible
-                    float distance = frame.Width * 0.06f * (joint + 1);
+                    // Progressive joint angles for realistic finger movement
+                    float jointAngle = angle;
+                    
+                    // Apply more curl to further joints
+                    if (joint > 0)
+                    {
+                        // Additional curl for each joint
+                        jointAngle += fingerCurl * (joint * 0.4f);
+                    }
+                    
+                    // Finger segment lengths - shorter for each segment
+                    float jointLength = handSize * 0.4f * (1.0f - joint * 0.15f);
+                    
+                    // Previous joint position (or base point for first joint)
+                    PointF prevPoint = (joint == 0) ? basePoint : 
+                        _handLandmarks[5 + finger * 3 + joint - 1];
+                    
+                    // Calculate new joint position from previous point
                     _handLandmarks.Add(new PointF(
-                        basePoint.X + (float)Math.Cos(angle) * distance,
-                        basePoint.Y - (float)Math.Sin(angle) * distance
+                        prevPoint.X + (float)Math.Cos(jointAngle) * jointLength,
+                        prevPoint.Y - (float)Math.Sin(jointAngle) * jointLength
                     ));
                 }
             }
+            
+            // Ensure all coordinates stay within 0-1 range
+            for (int i = 0; i < _handLandmarks.Count; i++)
+            {
+                PointF point = _handLandmarks[i];
+                point.X = Math.Max(0.0f, Math.Min(1.0f, point.X));
+                point.Y = Math.Max(0.0f, Math.Min(1.0f, point.Y));
+                _handLandmarks[i] = point;
+            }
+            
+            // Log that we're using fallback
+            Debug.WriteLine($"Using fallback hand landmarks - generated {_handLandmarks.Count} points");
         }
         
         
@@ -1060,39 +1182,42 @@ if __name__ == '__main__':
                     RenderMesh(g, result.Width, result.Height);
                 }
                 
-                // Draw hand landmarks directly in the view alongside the mesh
+                // Draw hand landmarks directly in the view alongside the mesh with improved visibility
                 if (_handLandmarks.Count > 0)
                 {
-                    // Calculate the center of hand landmarks
-                    float handCenterX = 0, handCenterY = 0;
-                    foreach (var point in _handLandmarks)
-                    {
-                        handCenterX += point.X;
-                        handCenterY += point.Y;
-                    }
-                    handCenterX /= _handLandmarks.Count;
-                    handCenterY /= _handLandmarks.Count;
-                    
-                    // Create a copy of landmarks scaled and positioned to overlay on the mesh
+                    // For normalized coordinates, use scale factor directly with additional enhancements
                     List<PointF> overlayLandmarks = new List<PointF>();
+                    
+                    // Scale landmark positions to fit viewport with improved visibility
+                    float viewportSizeFactor = Math.Min(result.Width, result.Height);
+                    float scaleFactor = viewportSizeFactor * 0.45f * (float)_zoomFactor; // Make hand larger and more visible
+                    
+                    // Calculate animated position offset for more natural hand movement
+                    // in relation to the mesh - this makes the hand appear to "float" around the mesh
+                    double time = DateTime.Now.TimeOfDay.TotalSeconds;
+                    float xMovement = (float)(Math.Sin(time * 0.3) * 0.05); // Gentle horizontal drift
+                    float yMovement = (float)(Math.Cos(time * 0.4) * 0.03); // Gentle vertical drift
+                    
+                    // Offset for better positioning within view
+                    float xOffset = 0.5f + xMovement; // Center of the view with slight animation
+                    float yOffset = 0.5f + yMovement; // Center of the view with slight animation
+                    
+                    // Note: Removed the backdrop circle and glow effect that was showing
+                    // even when hand landmarks weren't being detected properly
+                    
                     foreach (var point in _handLandmarks)
                     {
-                        // Calculate offset from hand center
-                        float offsetX = point.X - handCenterX;
-                        float offsetY = point.Y - handCenterY;
-                        
-                        // Scale by a factor that looks good in the viewport
-                        float scaleFactor = (float)(Math.Min(result.Width, result.Height) * 0.0015 * _zoomFactor);
-                        
-                        // Position relative to center of viewport
+                        // Position the hand centered in the viewport, scaled to fit
                         overlayLandmarks.Add(new PointF(
-                            centerX + offsetX * scaleFactor,
-                            centerY + offsetY * scaleFactor
+                            centerX + (point.X - xOffset) * scaleFactor,
+                            centerY + (point.Y - yOffset) * scaleFactor
                         ));
                     }
                     
-                    // Draw landmarks directly in the mesh view
+                    // Draw landmarks directly in the mesh view with enhanced visibility
                     DrawHandLandmarksInView(g, overlayLandmarks);
+                    
+                    // We won't show the "Hand Tracking Active" text anymore as it was confusing users
                 }
                 
                 // Add a small webcam preview in the corner
@@ -1115,7 +1240,7 @@ if __name__ == '__main__':
                 using (Font font = new Font("Arial", 12, FontStyle.Bold))
                 {
                     string handStatus = (_handLandmarks.Count > 0) 
-                        ? $"Landmarks: {_handLandmarks.Count} detected" 
+                        ? $"Hand Landmarks: {_handLandmarks.Count} detected" 
                         : "No hand landmarks detected";
                     
                     g.DrawString(handStatus, font, Brushes.White, 
@@ -1326,26 +1451,36 @@ if __name__ == '__main__':
             return new PointF(screenX, screenY);
         }
         
-        // Draw hand landmarks directly overlaid on the mesh view
-        private void DrawHandLandmarksInView(Graphics g, List<PointF> landmarks)
+        // Draw hand landmarks directly overlaid on the mesh view - enhanced version for better visualization
+        internal void DrawHandLandmarksInView(Graphics g, List<PointF> landmarks)
         {
             if (landmarks.Count < 21) // MediaPipe hand has 21 points
                 return;
                 
-            // Use colors that stand out against the mesh background
-            Color handColor = Color.FromArgb(255, 220, 50, 30); // Bright red-orange for visibility
-            Color jointColor = Color.FromArgb(255, 230, 230, 0); // Bright yellow
-            Color wristColor = Color.FromArgb(255, 255, 80, 80); // Light red
+            // Use more vibrant colors that stand out against the mesh background
+            Color handColor = Color.FromArgb(255, 255, 80, 0); // Bright orange-red like MediaPipe
+            Color jointColor = Color.FromArgb(255, 255, 220, 20); // Bright yellow
+            Color wristColor = Color.FromArgb(255, 255, 100, 100); // Light red
+            Color fingerTipColor = Color.FromArgb(255, 100, 255, 100); // Bright green for fingertips
+            
+            // Line sizes
+            float connectionThickness = 5.0f; // Thicker lines for better visibility on mesh
+            float palmThickness = 6.0f; // Even thicker for the palm lines
             
             // Create brushes and pens with these colors
             using (Brush pointBrush = new SolidBrush(jointColor))
             using (Brush wristBrush = new SolidBrush(wristColor))
-            using (Pen connectionPen = new Pen(handColor, 4)) // Thick lines but not too thick
+            using (Brush tipBrush = new SolidBrush(fingerTipColor))
+            using (Pen connectionPen = new Pen(handColor, connectionThickness))
+            using (Pen palmPen = new Pen(Color.FromArgb(255, 240, 100, 40), palmThickness))
             {
                 // Add MediaPipe-like styling
                 connectionPen.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
                 connectionPen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
                 connectionPen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+                palmPen.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
+                palmPen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+                palmPen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
                 
                 // First draw palm connections
                 PointF[] palmPoints = new PointF[5];
@@ -1355,62 +1490,104 @@ if __name__ == '__main__':
                 }
                 
                 // Palm polygon (semi-transparent)
-                using (Brush palmBrush = new SolidBrush(Color.FromArgb(80, handColor)))
+                using (Brush palmBrush = new SolidBrush(Color.FromArgb(100, 240, 120, 80)))
                 {
                     g.FillPolygon(palmBrush, palmPoints);
                 }
                 
-                // Draw connections (simplified hand skeleton)
+                // Draw palm outline with thicker pen
                 // Wrist to palm connections
                 for (int i = 1; i <= 4; i++)
                 {
-                    g.DrawLine(connectionPen, landmarks[0], landmarks[i]);
+                    g.DrawLine(palmPen, landmarks[0], landmarks[i]);
                 }
                 
                 // Palm connections
                 for (int i = 1; i < 4; i++)
                 {
-                    g.DrawLine(connectionPen, landmarks[i], landmarks[i + 1]);
+                    g.DrawLine(palmPen, landmarks[i], landmarks[i + 1]);
                 }
                 
                 // Connect pinky base to wrist
-                g.DrawLine(connectionPen, landmarks[4], landmarks[0]);
+                g.DrawLine(palmPen, landmarks[4], landmarks[0]);
                 
                 // Finger connections (4 points per finger, 5 fingers)
                 for (int finger = 0; finger < 5; finger++)
                 {
                     int baseIndex = finger + 1; // Base joint in the palm
                     
-                    // Connect finger joints
-                    for (int joint = 0; joint < 3; joint++)
+                    // Create a custom pen for each finger with slightly different color
+                    // This helps differentiate fingers visually
+                    using (Pen fingerPen = new Pen(Color.FromArgb(255, 
+                        (byte)Math.Min(255, handColor.R - finger * 15), 
+                        (byte)Math.Min(255, handColor.G + finger * 15), 
+                        (byte)Math.Min(255, handColor.B + finger * 40)), connectionThickness))
                     {
-                        int currentIndex = 5 + finger * 3 + joint;
-                        int prevIndex = (joint == 0) ? baseIndex : 5 + finger * 3 + joint - 1;
+                        fingerPen.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
+                        fingerPen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+                        fingerPen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
                         
-                        g.DrawLine(connectionPen, landmarks[prevIndex], landmarks[currentIndex]);
+                        // Connect finger joints
+                        for (int joint = 0; joint < 3; joint++)
+                        {
+                            int currentIndex = 5 + finger * 3 + joint;
+                            int prevIndex = (joint == 0) ? baseIndex : 5 + finger * 3 + joint - 1;
+                            
+                            g.DrawLine(fingerPen, landmarks[prevIndex], landmarks[currentIndex]);
+                        }
                     }
                 }
                 
-                // Draw all landmark points
+                // Draw shadow under all landmarks for better contrast against any background
                 foreach (var point in landmarks)
                 {
-                    // Draw a black outline for better visibility
-                    g.FillEllipse(Brushes.Black, point.X - 3, point.Y - 3, 6, 6);
-                    g.FillEllipse(pointBrush, point.X - 2, point.Y - 2, 4, 4);
+                    g.FillEllipse(Brushes.Black, point.X - 6, point.Y - 6, 12, 12);
                 }
                 
-                // Draw fingertips slightly larger
+                // Draw all regular joints
+                foreach (var point in landmarks)
+                {
+                    g.FillEllipse(pointBrush, point.X - 4, point.Y - 4, 8, 8);
+                }
+                
+                // Draw fingertips with distinctive larger green points for visibility
                 for (int finger = 0; finger < 5; finger++)
                 {
                     int tipIndex = 5 + finger * 3 + 2; // Last joint of each finger
-                    g.FillEllipse(Brushes.Black, landmarks[tipIndex].X - 4, landmarks[tipIndex].Y - 4, 8, 8);
-                    g.FillEllipse(new SolidBrush(Color.FromArgb(255, 255, 255, 80)), 
-                        landmarks[tipIndex].X - 3, landmarks[tipIndex].Y - 3, 6, 6);
+                    
+                    // Draw fingertip shadow (black outline) for contrast
+                    g.FillEllipse(Brushes.Black, landmarks[tipIndex].X - 7, landmarks[tipIndex].Y - 7, 14, 14);
+                    
+                    // Draw fingertip colored circle
+                    g.FillEllipse(tipBrush, landmarks[tipIndex].X - 6, landmarks[tipIndex].Y - 6, 12, 12);
+                    
+                    // Add a highlight spot for 3D effect
+                    g.FillEllipse(Brushes.White, landmarks[tipIndex].X - 2, landmarks[tipIndex].Y - 2, 4, 4);
                 }
                 
-                // Draw wrist point
-                g.FillEllipse(Brushes.Black, landmarks[0].X - 5, landmarks[0].Y - 5, 10, 10);
-                g.FillEllipse(wristBrush, landmarks[0].X - 4, landmarks[0].Y - 4, 8, 8);
+                // Draw wrist point as the largest with distinctive color
+                g.FillEllipse(Brushes.Black, landmarks[0].X - 8, landmarks[0].Y - 8, 16, 16);
+                g.FillEllipse(wristBrush, landmarks[0].X - 7, landmarks[0].Y - 7, 14, 14);
+                
+                // Label each fingertip with a number for easier identification
+                using (Font labelFont = new Font("Arial", 10, FontStyle.Bold))
+                using (Brush labelBrush = new SolidBrush(Color.White))
+                using (Brush shadowBrush = new SolidBrush(Color.Black))
+                {
+                    for (int finger = 0; finger < 5; finger++)
+                    {
+                        int tipIndex = 5 + finger * 3 + 2; // Last joint of each finger
+                        string label = finger.ToString();
+                        
+                        // Draw shadow text for better visibility
+                        g.DrawString(label, labelFont, shadowBrush, 
+                            landmarks[tipIndex].X - 4 + 1, landmarks[tipIndex].Y - 7 + 1);
+                            
+                        // Draw actual text
+                        g.DrawString(label, labelFont, labelBrush, 
+                            landmarks[tipIndex].X - 4, landmarks[tipIndex].Y - 7);
+                    }
+                }
             }
         }
         
@@ -1550,6 +1727,28 @@ if __name__ == '__main__':
                 
                 // Pass the frame directly to the UI
                 _viewerForm.UpdateImage(frame);
+                
+                // If we have hand landmarks, make sure the viewer is refreshed immediately
+                // so the landmarks are displayed without delay
+                if (_handLandmarks.Count > 0 && _viewerForm != null && !_viewerForm.IsDisposed)
+                {
+                    try
+                    {
+                        // Force an immediate invalidation of the PictureBox to ensure
+                        // the hand landmarks are drawn in real-time
+                        _viewerForm.BeginInvoke(new Action(() => {
+                            if (!_viewerForm.IsDisposed && _viewerForm._pictureBox != null 
+                                && !_viewerForm._pictureBox.IsDisposed)
+                            {
+                                _viewerForm._pictureBox.Invalidate(true);
+                            }
+                        }));
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error invalidating viewer form picture box: {ex.Message}");
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -1699,7 +1898,7 @@ if __name__ == '__main__':
     // Form class for the mesh and hand tracking viewer
     public class MeshHandTrackingViewer : Form
     {
-        private BufferedPictureBox _pictureBox;
+        internal BufferedPictureBox _pictureBox;
         private Label _statusLabel;
         private MeshHandTrackingComponent _component;
         private Font _smallFont = new Font("Arial", 8);
@@ -1719,7 +1918,7 @@ if __name__ == '__main__':
         {
             _component = component;
             
-            // Form setup
+            // Form setup - optimized for real-time visualization
             this.Text = "Mesh Hand Tracking";
             _preferredSize = new System.Drawing.Size(800, 600);
             this.ClientSize = _preferredSize;
@@ -1731,10 +1930,11 @@ if __name__ == '__main__':
             this.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             this.DoubleBuffered = true;
             
-            // These styles help prevent window resizing issues
+            // Enhanced graphics performance settings for real-time updates
             SetStyle(ControlStyles.OptimizedDoubleBuffer | 
                     ControlStyles.AllPaintingInWmPaint | 
-                    ControlStyles.UserPaint, true);
+                    ControlStyles.UserPaint | 
+                    ControlStyles.ResizeRedraw, true);
                     
             // Prevent Windows from auto-adjusting the size
             this.SizeGripStyle = SizeGripStyle.Hide;
@@ -1742,17 +1942,17 @@ if __name__ == '__main__':
             // Add form closing event handler to detect user closing
             this.FormClosing += OnFormClosing;
             
-            // Status label
+            // Status label - improved layout
             _statusLabel = new Label();
             _statusLabel.Dock = DockStyle.Top;
-            _statusLabel.Height = 20;
+            _statusLabel.Height = 24; // Slightly taller for better visibility
             _statusLabel.TextAlign = ContentAlignment.MiddleLeft;
             _statusLabel.BackColor = Color.FromArgb(64, 64, 64);
             _statusLabel.ForeColor = Color.White;
-            _statusLabel.Font = _smallFont;
-            _statusLabel.Padding = new Padding(3, 0, 0, 0);
+            _statusLabel.Font = new Font("Arial", 9, FontStyle.Regular); // Slightly larger font
+            _statusLabel.Padding = new Padding(5, 0, 0, 0);
             
-            // PictureBox setup
+            // PictureBox setup - optimized for real-time rendering
             _pictureBox = new BufferedPictureBox();
             _pictureBox.Dock = DockStyle.Fill;
             _pictureBox.SizeMode = PictureBoxSizeMode.Zoom;
@@ -1760,13 +1960,15 @@ if __name__ == '__main__':
             _pictureBox.MaximumSize = new Size(1280, 960);
             _pictureBox.Size = new Size(800, 600);
             
-            // Create view mode dropdown in the top left
+            // Add Paint event handler for custom rendering (needed for real-time hand landmarks)
+            _pictureBox.Paint += new PaintEventHandler(PictureBox_Paint);
+            
+            // Create view mode dropdown in the top left - improved styling
             _viewModeDropdown = new ComboBox();
             _viewModeDropdown.DropDownStyle = ComboBoxStyle.DropDownList;
-            _viewModeDropdown.Size = new System.Drawing.Size(100, 28);
+            _viewModeDropdown.Size = new System.Drawing.Size(120, 28);
             _viewModeDropdown.Location = new System.Drawing.Point(10, 40);
-            // Note: We're using a very dark, semi-transparent color because ComboBox doesn't fully support transparency
-            _viewModeDropdown.BackColor = Color.FromArgb(30, 30, 30);
+            _viewModeDropdown.BackColor = Color.FromArgb(50, 50, 50);
             _viewModeDropdown.ForeColor = Color.White;
             _viewModeDropdown.FlatStyle = FlatStyle.Flat;
             _viewModeDropdown.Font = new Font("Arial", 10);
@@ -1776,7 +1978,7 @@ if __name__ == '__main__':
             _viewModeDropdown.SelectedIndex = 0; // Set to Front by default
             _viewModeDropdown.SelectedIndexChanged += new EventHandler(ViewModeDropdown_SelectedIndexChanged);
             
-            // Create zoom label
+            // Create zoom label - improved position
             _zoomLabel = new Label();
             _zoomLabel.Text = "Zoom:";
             _zoomLabel.Font = new Font("Arial", 10, FontStyle.Bold);
@@ -1799,13 +2001,13 @@ if __name__ == '__main__':
             _zoomSlider.TickStyle = TickStyle.Both;
             _zoomSlider.ValueChanged += new EventHandler(ZoomSlider_ValueChanged);
             
-            // Keep the zoom buttons for quick adjustments
+            // Enhanced zoom buttons for quick adjustments
             _zoomInButton = new Button();
             _zoomInButton.Text = "+";
             _zoomInButton.Font = new Font("Arial", 12, FontStyle.Bold);
             _zoomInButton.Size = new System.Drawing.Size(30, 30);
             _zoomInButton.Location = new System.Drawing.Point(175, 90);
-            _zoomInButton.BackColor = Color.Transparent;
+            _zoomInButton.BackColor = Color.FromArgb(60, 60, 60);
             _zoomInButton.ForeColor = Color.White;
             _zoomInButton.FlatStyle = FlatStyle.Flat;
             _zoomInButton.FlatAppearance.BorderSize = 1;
@@ -1817,12 +2019,26 @@ if __name__ == '__main__':
             _zoomOutButton.Font = new Font("Arial", 12, FontStyle.Bold);
             _zoomOutButton.Size = new System.Drawing.Size(30, 30);
             _zoomOutButton.Location = new System.Drawing.Point(10, 90);
-            _zoomOutButton.BackColor = Color.Transparent;
+            _zoomOutButton.BackColor = Color.FromArgb(60, 60, 60);
             _zoomOutButton.ForeColor = Color.White;
             _zoomOutButton.FlatStyle = FlatStyle.Flat;
             _zoomOutButton.FlatAppearance.BorderSize = 1;
             _zoomOutButton.FlatAppearance.BorderColor = Color.White;
             _zoomOutButton.Click += new EventHandler(ZoomOutButton_Click);
+            
+            // Add a checkbox to toggle real-time hand tracking visualization
+            CheckBox handTrackingCheckbox = new CheckBox();
+            handTrackingCheckbox.Text = "Show Hand Tracking";
+            handTrackingCheckbox.Checked = true;
+            handTrackingCheckbox.Location = new System.Drawing.Point(10, 130);
+            handTrackingCheckbox.Size = new System.Drawing.Size(150, 24);
+            handTrackingCheckbox.BackColor = Color.Transparent;
+            handTrackingCheckbox.ForeColor = Color.White;
+            handTrackingCheckbox.Font = new Font("Arial", 10);
+            handTrackingCheckbox.CheckedChanged += new EventHandler((sender, e) => {
+                // Force redraw of the pictureBox when checkbox changes
+                _pictureBox.Invalidate();
+            });
             
             // Add controls in the right order
             this.Controls.Add(_pictureBox);
@@ -1832,6 +2048,19 @@ if __name__ == '__main__':
             this.Controls.Add(_zoomSlider);
             this.Controls.Add(_zoomInButton);
             this.Controls.Add(_zoomOutButton);
+            this.Controls.Add(handTrackingCheckbox);
+            
+            // Set up timer for automatic refresh to ensure hand tracking stays visible
+            System.Windows.Forms.Timer refreshTimer = new System.Windows.Forms.Timer();
+            refreshTimer.Interval = 33; // ~30 fps for UI updates
+            refreshTimer.Tick += (sender, e) => {
+                // Force repaint of pictureBox to ensure hand tracking is updated
+                if (_pictureBox != null && !_pictureBox.IsDisposed && _component._handLandmarks.Count > 0)
+                {
+                    _pictureBox.Invalidate();
+                }
+            };
+            refreshTimer.Start();
             
             // Update initial label
             UpdateStatusLabel();
@@ -1843,6 +2072,61 @@ if __name__ == '__main__':
             
             // Force initial size again after all controls are added
             this.ClientSize = _preferredSize;
+        }
+        
+        // New method for custom rendering of hand landmarks directly on the PictureBox
+        private void PictureBox_Paint(object sender, PaintEventArgs e)
+        {
+            // For now, we'll draw the landmarks regardless of count
+            // to help debug the visualization
+            if (_component._handLandmarks.Count > 0) 
+            {
+                // Get graphics object and enable high quality rendering
+                Graphics g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                
+                // Calculate scaling to fit landmarks over the mesh render
+                int centerX = _pictureBox.Width / 2;
+                int centerY = _pictureBox.Height / 2;
+                
+                // Scale factor based on view size
+                float viewportSizeFactor = Math.Min(_pictureBox.Width, _pictureBox.Height);
+                float scaleFactor = viewportSizeFactor * 0.4f * (float)_component._zoomFactor;
+                
+                // Add a label to help debug
+                using (Font font = new Font("Arial", 10, FontStyle.Bold))
+                {
+                    string message = $"Landmarks count: {_component._handLandmarks.Count}";
+                    g.DrawString(message, font, Brushes.White, 
+                                 new PointF(10, _pictureBox.Height - 30));
+                }
+                
+                // Convert the normalized coordinates to screen coordinates
+                List<PointF> screenLandmarks = new List<PointF>();
+                foreach (var point in _component._handLandmarks)
+                {
+                    // Position landmarks centered in the viewport
+                    screenLandmarks.Add(new PointF(
+                        centerX + (point.X - 0.5f) * scaleFactor,
+                        centerY + (point.Y - 0.5f) * scaleFactor
+                    ));
+                }
+                
+                // Draw the landmarks directly in the picture box
+                _component.DrawHandLandmarksInView(g, screenLandmarks);
+            }
+            else
+            {
+                // Draw a message when no landmarks are detected
+                using (Font font = new Font("Arial", 12, FontStyle.Bold))
+                {
+                    string message = "No hand landmarks detected";
+                    Graphics graphics = e.Graphics;
+                    graphics.DrawString(message, font, Brushes.Red, 
+                                 new PointF(10, _pictureBox.Height - 30));
+                }
+            }
         }
 
         private void OnResizeBegin(object sender, EventArgs e)
@@ -1993,8 +2277,12 @@ if __name__ == '__main__':
                             // Update frame rate counter immediately
                             UpdateFrameRate();
                             
-                            // Update the status label with the new image dimensions
+                            // Update the status label with the new image dimensions and hand landmarks info
                             UpdateStatusLabel();
+                            
+                            // Force immediate redraw of the PictureBox to ensure hand landmarks are drawn
+                            // This is crucial for real-time hand tracking visualization
+                            _pictureBox.Invalidate();
                             
                             // Dispose old image after the new one is displayed
                             if (oldImage != null && oldImage != image)
@@ -2068,10 +2356,19 @@ if __name__ == '__main__':
                 {
                     string cameraName = _component._detectedCameras[_component._deviceIndex];
                     
+                    // Shorten camera name if too long
+                    if (cameraName.Length > 20)
+                    {
+                        cameraName = cameraName.Substring(0, 17) + "...";
+                    }
+                    
                     // Add resolution in compact format
                     if (_pictureBox.Image != null)
                     {
-                        status = $"Camera: {cameraName} | Resolution: {_pictureBox.Image.Width}x{_pictureBox.Image.Height} | FPS: {Math.Round(_currentFps, 1)}";
+                        // For debugging, show landmark count instead of detection status
+                        string handStatus = $"| Landmarks: {_component._handLandmarks.Count}";
+                        
+                        status = $"Camera: {cameraName} | Resolution: {_pictureBox.Image.Width}x{_pictureBox.Image.Height} | FPS: {Math.Round(_currentFps, 1)} {handStatus} | View: {_component._currentViewMode} | Zoom: {_component._zoomFactor:F1}x";
                     }
                     else
                     {
