@@ -28,27 +28,50 @@ def process_frame_with_mediapipe(image, output_path):
     # Convert to RGB (MediaPipe requires RGB)
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     
-    # Process with MediaPipe
+    # Get image dimensions for logging
+    h, w = image.shape[:2]
+    print(f"Processing image {w}x{h}", file=sys.stderr)
+    
+    # Process with MediaPipe - with extremely sensitive settings
     with mp_hands.Hands(
-        static_image_mode=True,
-        max_num_hands=1,
-        min_detection_confidence=0.5) as hands:
+        static_image_mode=False,      # Set to False for tracking mode
+        max_num_hands=2,              # Support two hands
+        min_detection_confidence=0.1, # Very low threshold to detect more hands
+        min_tracking_confidence=0.1,  # Very low threshold for tracking
+        model_complexity=0) as hands: # Use lower complexity for better performance
         
         results = hands.process(image_rgb)
         
-        # Write landmarks to output file
+        # Create or clear output file
         with open(output_path, 'w') as f:
+            # Debug info
             if results.multi_hand_landmarks:
-                for hand_landmarks in results.multi_hand_landmarks:
-                    # Export all 21 landmarks (normalized coordinates)
-                    for landmark in hand_landmarks.landmark:
-                        f.write(f"{landmark.x},{landmark.y}\n")
-                    
-                    # Only process one hand for simplicity
-                    break
+                hand_count = len(results.multi_hand_landmarks)
+                print(f"Detected {hand_count} hand(s)", file=sys.stderr)
+                
+                # Take the first detected hand
+                hand_landmarks = results.multi_hand_landmarks[0]
+                
+                # Debug landmarks
+                for i, landmark in enumerate(hand_landmarks.landmark):
+                    # Write normalized coordinates to file
+                    f.write(f"{landmark.x},{landmark.y}\n")
+                    # Debug output
+                    if i % 4 == 0:  # Only print every 4th landmark to reduce noise
+                        print(f"Landmark {i}: ({landmark.x:.3f}, {landmark.y:.3f})", file=sys.stderr)
+                
+                # Visualize landmarks in debug mode (commented out but useful for debugging)
+                # annotated_image = image.copy()
+                # mp_drawing.draw_landmarks(
+                #     annotated_image, 
+                #     hand_landmarks, 
+                #     mp_hands.HAND_CONNECTIONS)
+                # cv2.imwrite(output_path + ".debug.jpg", annotated_image)
+                
                 return True  # Hand detected
             else:
                 # No hands detected
+                print("No hands detected in frame", file=sys.stderr)
                 return False
 
 def generate_simulated_landmarks(image_shape, output_path):
