@@ -709,7 +709,7 @@ namespace crft
             // Build path to the Python script
             string assemblyLocation = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
             string projectRoot = Path.GetFullPath(Path.Combine(assemblyLocation, "../../.."));
-            _pythonScriptPath = Path.Combine(projectRoot, "mediapipe/process_hand_frame.py");
+            _pythonScriptPath = Path.Combine(projectRoot, "mediapipe/handtrack.py");
             
             // Verify the Python script exists
             if (!File.Exists(_pythonScriptPath))
@@ -718,9 +718,9 @@ namespace crft
                 
                 // Try alternative paths
                 string[] alternativePaths = new string[] {
-                    Path.Combine(projectRoot, "mediapipe", "process_hand_frame.py"),
-                    Path.Combine(Path.GetDirectoryName(projectRoot), "mediapipe", "process_hand_frame.py"),
-                    Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(projectRoot)), "mediapipe", "process_hand_frame.py")
+                    Path.Combine(projectRoot, "mediapipe", "handtrack.py"),
+                    Path.Combine(Path.GetDirectoryName(projectRoot), "mediapipe", "handtrack.py"),
+                    Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(projectRoot)), "mediapipe", "handtrack.py")
                 };
                 
                 foreach (string path in alternativePaths)

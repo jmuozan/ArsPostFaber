@@ -54,6 +54,10 @@
               "target": "Package",
               "version": "[8.0.23304.9001, )"
             },
+            "Mediapipe": {
+              "target": "Package",
+              "version": "[1.0.0.1, )"
+            },
             "Microsoft.ML.OnnxRuntime": {
               "target": "Package",
               "version": "[1.16.3, )"
@@ -64,18 +68,30 @@
               "version": "[1.0.3, )",
               "generatePathProperty": true
             },
+            "Newtonsoft.Json": {
+              "target": "Package",
+              "version": "[13.0.3, )"
+            },
             "OpenCvSharp4": {
               "target": "Package",
-              "version": "[4.7.0.20230224, )"
+              "version": "[4.10.0.20241108, )"
+            },
+            "OpenCvSharp4.Extensions": {
+              "target": "Package",
+              "version": "[4.10.0.20241108, )"
             },
             "OpenCvSharp4.runtime.osx.10.15-universal": {
               "target": "Package",
               "version": "[4.7.0.20230224, )"
             },
+            "Python.Runtime": {
+              "target": "Package",
+              "version": "[2.7.9, )"
+            },
             "System.Drawing.Common": {
               "include": "Compile, Build, Native, ContentFiles, Analyzers, BuildTransitive",
               "target": "Package",
-              "version": "[7.0.0, )"
+              "version": "[8.0.0, )"
             }
           },
           "imports": [

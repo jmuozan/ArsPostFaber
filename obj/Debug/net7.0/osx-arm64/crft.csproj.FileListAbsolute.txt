@@ -21,3 +21,7 @@
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.pdb
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.genruntimeconfig.cache
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/ref/crft.gha
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/Microsoft.Win32.SystemEvents.dll
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/OpenCvSharp.Extensions.dll
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/Mediapipe.dll
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/Newtonsoft.Json.dll
