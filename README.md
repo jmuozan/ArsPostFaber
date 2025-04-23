@@ -1,57 +1,44 @@
 # crft
 
 ## Overview
-The `crft` repository appears to be a project that integrates various components for tasks such as hand tracking, segmentation, and more. It includes scripts, libraries, and binaries for processing and analyzing data, likely related to computer vision or machine learning.
+crft is a set of Grasshopper components for Rhino, forming a plugin that explores human-software-machine interaction (HMI). The components are designed as an experimental toolkit for bridging the physical and digital worlds, focusing on:
+
+- **Atoms to Bits**: Mesh digitization workflows, enabling the conversion of physical objects into digital mesh representations.
+- **Mesh Editing with Hand Detection**: Real-time mesh manipulation using hand tracking and gesture recognition, leveraging computer vision and AI.
+- **Machine Live Control**: Components for live, interactive control of digital and physical systems, exploring new paradigms of HMI.
+
+## Features
+- Real-time camera and video capture integration.
+- Hand tracking and gesture-based mesh editing.
+- Mesh digitization and manipulation tools.
+- Experimental interfaces for live machine control.
 
 ## Repository Structure
-
-### Root Files
-- **BitmapParameter.cs, EventArguments.cs, HandtrackComponent.cs, MeshComponent.cs, MockClasses.cs, ply-importerComponent.cs, SAMComponent.cs, WebcamComponent.cs, WebViewEditor.cs**: Core C# files implementing various functionalities.
-- **crft.csproj, crft.sln**: Project and solution files for the .NET project.
-- **LICENSE**: Licensing information.
-- **README.md**: This file.
-- **download_models.sh**: A script to download required models.
-- **run_sam.sh**: A script to run SAM (Segment Anything Model).
-
-### Directories
-
-#### `backup/`
-Contains backup scripts and files, such as:
-- **launch_sam_ui.py**: Likely a Python script to launch a UI for SAM.
-- **run_sam_direct.py**: A script to directly run SAM.
-- **test_*.sh**: Various test scripts.
-
-#### `bin/`
-Compiled binaries and runtime files for Debug and Release configurations.
-
-#### `lib/`
-Contains native libraries, such as `libOpenCvSharpExtern.dylib`.
-
-#### `mediapipe/`
-Python scripts for hand tracking:
-- **handtrack.py**: Main script for hand tracking.
-- **process_hand_frame.py**: Processes individual hand frames.
-
-#### `segmentanything/`
-Scripts and configurations for the Segment Anything Model (SAM):
-- **1_extract_frames.py, 2_segmenter.py, 3_masking_out.py, 4_reconstruction.py**: Steps for frame extraction, segmentation, masking, and reconstruction.
-- **sam2/**: Contains SAM2-related scripts, configurations, and utilities.
-
-#### `Properties/`
-Contains project properties, such as `launchSettings.json`.
+- **BitmapParameter.cs, EventArguments.cs, HandtrackComponent.cs, MeshComponent.cs, MockClasses.cs, ply-importerComponent.cs, SAMComponent.cs, WebcamComponent.cs, WebViewEditor.cs**: Core C# files implementing the Grasshopper components and plugin logic.
+- **crft.csproj, crft.sln**: Project and solution files for .NET build.
+- **download_models.sh**: Script to download required AI/ML models.
+- **run_sam.sh**: Script to run the Segment Anything Model (SAM).
+- **mediapipe/**: Python scripts for hand tracking and computer vision.
+- **segmentanything/**: Scripts and configs for segmentation workflows.
+- **backup/**: Utility scripts and test files.
+- **bin/**: Compiled binaries and runtime files.
+- **lib/**: Native libraries (e.g., OpenCV, ONNX Runtime).
+- **Properties/**: Project configuration files.
 
 ## Build Instructions
-To build the project, use the following command:
+To build the plugin, run:
+
 ```bash
-$ dotnet build -clp:NoSummary crft.csproj
+dotnet build -clp:NoSummary crft.csproj
 ```
 
-Alternatively, you can use the VS Code task labeled `build`.
+Or use the VS Code task labeled `build`.
 
 ## Usage
-- Run `download_models.sh` to download necessary models.
-- Use `run_sam.sh` to execute the Segment Anything Model.
-- Explore the `mediapipe/` and `segmentanything/` directories for specific functionalities.
+- Run `download_models.sh` to fetch required models.
+- Use `run_sam.sh` for segmentation workflows.
+- Load the compiled plugin (`crft.gha`) into Grasshopper for Rhino.
+- Explore the provided Grasshopper components for mesh digitization, hand-based mesh editing, and live control experiments.
 
 ## License
-Refer to the `LICENSE` file for licensing details.
+See the `LICENSE` file for details.
