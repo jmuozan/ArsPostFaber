@@ -42,3 +42,9 @@ Or use the VS Code task labeled `build`.
 
 ## License
 See the `LICENSE` file for details.
+
+
+
+## ToDo
+- [ ] Implement Depth Maps for SfM 3D reconstruction
+- [ ] 'mediapipe/hand_detection.py' implementation on HandtrackComponent.cs
