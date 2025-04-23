@@ -1,6 +1,3 @@
 segmentanything/checkpoints
-ceramics_segmentation
-sam_hq_vit_b.pth
-sam_vit_b_01ec64.pth
 bin/Debug/net7.0/runtimes/ios/native/onnxruntime.xcframework/ios-arm64/onnxruntime.framework/onnxruntime
 bin/Debug/net7.0/runtimes/ios/native/onnxruntime.xcframework/ios-arm64_x86_64-simulator/onnxruntime.framework/onnxruntime
