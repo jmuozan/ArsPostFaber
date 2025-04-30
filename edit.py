@@ -18,6 +18,19 @@ class IntegratedMeshEditor:
         self.hand_landmarks = None
         self.running = True
         self.mesh_modified = False
+        self.is_pinching = False  # Add is_pinching attribute
+        self.initial_pinch_pos = None  # Track initial pinch position
+        
+        # Add colors for different parts
+        self.vertex_color = [0.3, 0.7, 1.0]  # Blue for vertices
+        self.selected_vertex_color = [1.0, 0.0, 0.0]  # Red for selected vertices
+        self.face_color = [0.7, 0.7, 0.7]  # Light gray for faces
+        self.edge_color = [0.0, 0.0, 0.0]  # Black for edges
+        
+        # Sensitivity settings
+        self.rotation_sensitivity = 0.2  # Reduced for finer control
+        self.zoom_sensitivity = 0.03  # Reduced for finer control
+        self.movement_sensitivity = 0.03  # Increased from 0.005 for faster response
         
         # Initialize MediaPipe hands
         print("Initializing MediaPipe...")
@@ -83,6 +96,41 @@ class IntegratedMeshEditor:
         self.vis = o3d.visualization.Visualizer()
         self.vis.create_window(visible=False, width=1280, height=720)
         self.vis.add_geometry(self.mesh)
+        
+        # Set rendering options to make vertices and faces distinct
+        render_option = self.vis.get_render_option()
+        render_option.point_size = 8.0  # Even larger vertices
+        render_option.line_width = 2.0  # Thicker lines for edges
+        render_option.background_color = [0.2, 0.2, 0.2]  # Dark background
+        render_option.light_on = True
+        
+        # Try to set advanced rendering options, with fallbacks for older versions
+        try:
+            render_option.mesh_shade_option = o3d.visualization.MeshShadeOption.Color
+        except (AttributeError, TypeError):
+            pass
+            
+        try:
+            render_option.mesh_color_option = o3d.visualization.MeshColorOption.Color
+        except (AttributeError, TypeError):
+            pass
+            
+        try:
+            render_option.show_point_color = True
+        except (AttributeError, TypeError):
+            pass
+            
+        # Try to display wireframe (edges)
+        try:
+            render_option.mesh_show_wireframe = True
+        except (AttributeError, TypeError):
+            pass
+            
+        # Remove coordinate frame
+        try:
+            render_option.show_coordinate_frame = False
+        except (AttributeError, TypeError):
+            pass
         
         # Set initial camera view
         self.view_control = self.vis.get_view_control()
@@ -173,25 +221,79 @@ class IntegratedMeshEditor:
     
     def update_mesh_visualization(self):
         """Update the mesh visualization."""
+        # Try to set material options to make vertices more visible
+        try:
+            material = self.vis.get_render_option()
+            material.point_size = 8.0  # Make vertices larger
+            material.line_width = 2.0  # Thicker lines for edges
+            
+            # Try to enable point normal visualization
+            try:
+                material.point_show_normal = True
+            except (AttributeError, TypeError):
+                pass
+                
+            # Try to show point color
+            try:
+                material.show_point_color = True
+            except (AttributeError, TypeError):
+                pass
+                
+            # Try to enable back face rendering
+            try:
+                material.mesh_show_back_face = True
+            except (AttributeError, TypeError):
+                pass
+                
+            # Try to display wireframe (edges)
+            try:
+                material.mesh_show_wireframe = True
+            except (AttributeError, TypeError):
+                pass
+        except Exception as e:
+            print(f"Warning: Could not set some rendering options: {e}")
+        
+        # Create a wireframe version of the mesh to better show edges
+        try:
+            # Extract edges from mesh and create LineSet
+            edges = o3d.geometry.LineSet.create_from_triangle_mesh(self.mesh)
+            edges.paint_uniform_color(self.edge_color)  # Color the edges black
+            
+            # Try to add/update the edges in the visualizer
+            if hasattr(self, 'edges_added'):
+                self.vis.update_geometry(edges)
+            else:
+                self.vis.add_geometry(edges)
+                self.edges_added = True
+        except Exception as e:
+            print(f"Warning: Could not create edge visualization: {e}")
+        
         # Highlight selected vertices
         vertex_colors = np.asarray(self.mesh.vertex_colors)
         if len(vertex_colors) == 0:
-            vertex_colors = np.ones((len(self.mesh.vertices), 3)) * [0.7, 0.7, 0.7]
+            vertex_colors = np.ones((len(self.mesh.vertices), 3)) * self.vertex_color
         
-        # Reset all vertices to default color
-        vertex_colors[:] = [0.7, 0.7, 0.7]
+        # Reset all vertices to default blue-ish color
+        vertex_colors[:] = self.vertex_color
         
         # Highlight selected vertices in red
         for idx in self.selected_vertices:
             if 0 <= idx < len(vertex_colors):
-                vertex_colors[idx] = [1.0, 0.0, 0.0]
+                vertex_colors[idx] = self.selected_vertex_color
         
+        # Apply vertex colors to mesh
         self.mesh.vertex_colors = o3d.utility.Vector3dVector(vertex_colors)
         
         # Update mesh in visualizer
         self.vis.update_geometry(self.mesh)
         self.vis.poll_events()
         self.vis.update_renderer()
+    
+    def end_pinch(self):
+        """End the pinching gesture."""
+        self.is_pinching = False
+        self.initial_pinch_pos = None
+        print("Pinch gesture ended")
     
     def draw_ui(self, frame):
         """Draw the UI elements on the frame."""
@@ -296,9 +398,9 @@ class IntegratedMeshEditor:
                 dx = x - self.last_position[0]
                 dy = y - self.last_position[1]
                 
-                # Update rotation based on mouse movement
-                self.rotation[1] += dx * 0.5  # Yaw
-                self.rotation[0] += dy * 0.5  # Pitch
+                # Update rotation based on mouse movement with improved sensitivity
+                self.rotation[1] += dx * self.rotation_sensitivity  # Yaw
+                self.rotation[0] += dy * self.rotation_sensitivity  # Pitch
                 
                 # Convert to rotation matrix
                 self.update_view_from_rotation()
@@ -313,11 +415,32 @@ class IntegratedMeshEditor:
             self.is_dragging = False
             self.last_position = None
         
-        # Zoom with mouse wheel
+        # Zoom with mouse wheel - Fix for different platforms
         elif event == cv2.EVENT_MOUSEWHEEL:
-            delta = flags > 0 and 1 or -1
-            self.zoom += delta * 0.05
+            # For Windows
+            delta = np.sign(flags >> 16)  # Extract vertical wheel motion
+            self.zoom += delta * self.zoom_sensitivity
             self.zoom = max(0.1, min(2.0, self.zoom))
+            self.view_control.set_zoom(self.zoom)
+            self.update_mesh_visualization()
+        elif event == cv2.EVENT_MOUSEHWHEEL:  
+            # For macOS
+            delta = -np.sign(flags)  # Different direction on macOS
+            self.zoom += delta * self.zoom_sensitivity
+            self.zoom = max(0.1, min(2.0, self.zoom))
+            self.view_control.set_zoom(self.zoom)
+            self.update_mesh_visualization()
+            
+        # Alternative zoom with keys (+ and -)
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('+') or key == ord('='):  # Plus key
+            self.zoom += self.zoom_sensitivity
+            self.zoom = min(2.0, self.zoom)
+            self.view_control.set_zoom(self.zoom)
+            self.update_mesh_visualization()
+        elif key == ord('-') or key == ord('_'):  # Minus key
+            self.zoom -= self.zoom_sensitivity
+            self.zoom = max(0.1, self.zoom)
             self.view_control.set_zoom(self.zoom)
             self.update_mesh_visualization()
     
@@ -358,9 +481,9 @@ class IntegratedMeshEditor:
             self.lasso_points = []
         
         elif button_name == "Edit Mode":
-            if len(self.selected_vertices) > 0:
-                self.mode = "edit"
-                self.lasso_points = []
+            # Allow switching to edit mode even if no vertices are selected
+            self.mode = "edit"
+            self.lasso_points = []
         
         elif button_name == "Reset Mesh":
             self.reset_mesh()
@@ -466,26 +589,47 @@ class IntegratedMeshEditor:
             (thumb_tip.y - index_tip.y) ** 2
         )
         
-        # Check for pinch gesture
-        is_pinching = distance < 0.08
+        # Check for pinch gesture - increase threshold for looser pinch detection
+        is_pinching = distance < 0.12  # Increased from 0.08 for looser pinch
         
-        # If pinching, move selected vertices
-        if is_pinching and self.selected_vertices:
-            # Calculate 3D movement vector based on hand position
-            h, w, _ = frame.shape
+        # Track movement of pinch point
+        pinch_center = [(thumb_tip.x + index_tip.x) / 2, 
+                        (thumb_tip.y + index_tip.y) / 2, 
+                        (thumb_tip.z + index_tip.z) / 2]
+        
+        # Store initial pinch position when starting a pinch
+        if is_pinching and not self.is_pinching:
+            self.initial_pinch_pos = pinch_center
+            print("Pinch started")
+        
+        # Update the is_pinching state
+        self.is_pinching = is_pinching
+        
+        # If pinching, move selected vertices based on hand movement from initial position
+        if self.is_pinching and self.selected_vertices and hasattr(self, 'initial_pinch_pos'):
+            # Calculate how much the hand has moved since starting the pinch
+            delta_x = pinch_center[0] - self.initial_pinch_pos[0]
+            delta_y = pinch_center[1] - self.initial_pinch_pos[1]
+            delta_z = pinch_center[2] - self.initial_pinch_pos[2]
             
-            # Get hand position in normalized screen coordinates
-            hand_x = (thumb_tip.x + index_tip.x) / 2
-            hand_y = (thumb_tip.y + index_tip.y) / 2
-            hand_z = (thumb_tip.z + index_tip.z) / 2
+            # Apply scaling factor - increased for more responsive movement
+            movement_scale = 10.0  # Increased from 5.0 for looser movement
             
-            # Convert to -1 to 1 range
-            hand_x = (hand_x - 0.5) * 2
-            hand_y = (hand_y - 0.5) * 2
-            hand_z = hand_z * 2
+            # Convert to -1 to 1 range and apply scaling
+            hand_x = delta_x * movement_scale
+            hand_y = -delta_y * movement_scale  # Invert Y for intuitive up/down
+            hand_z = delta_z * movement_scale
             
-            # Create movement vector
-            movement = np.array([hand_x, -hand_y, hand_z]) * 0.01
+            # Adjust based on current view to make movement more intuitive
+            param = self.view_control.convert_to_pinhole_camera_parameters()
+            extrinsic = np.array(param.extrinsic)
+            
+            # Create view-aligned movement vector
+            view_aligned_movement = np.array([hand_x, hand_y, hand_z])
+            
+            # Transform movement to view space
+            rotation = extrinsic[:3, :3].T  # Transpose for inverse rotation
+            movement = rotation @ view_aligned_movement * self.movement_sensitivity
             
             # Save current position for history
             vertices = np.asarray(self.mesh.vertices)
@@ -506,10 +650,32 @@ class IntegratedMeshEditor:
             
             # Update visualization
             self.update_mesh_visualization()
+            
+            # Update initial position for smoother tracking (more responsive to new movements)
+            # Reset initial position more frequently for smoother tracking
+            self.initial_pinch_pos = [
+                self.initial_pinch_pos[0] + (pinch_center[0] - self.initial_pinch_pos[0]) * 0.5,
+                self.initial_pinch_pos[1] + (pinch_center[1] - self.initial_pinch_pos[1]) * 0.5,
+                self.initial_pinch_pos[2] + (pinch_center[2] - self.initial_pinch_pos[2]) * 0.5
+            ]
     
     def run(self):
         """Main application loop."""
         print("Starting integrated mesh editor...")
+        print("Controls:")
+        print("  ESC: Exit")
+        print("  r: Reset mesh")
+        print("  s: Save mesh")
+        print("  v: View mode")
+        print("  l: Lasso select mode")
+        print("  e: Edit mode (can toggle between Lasso and Edit with 'e')")
+        print("  f: Front view")
+        print("  t: Top view")
+        print("  d: Side view")
+        print("  z: Undo last movement")
+        print("  +/-: Zoom in/out")
+        print("  Mouse wheel: Zoom in/out")
+        print("  Left mouse button: Rotate in view mode, draw lasso in lasso mode")
         
         while self.running:
             try:
@@ -519,6 +685,9 @@ class IntegratedMeshEditor:
                     print("Failed to capture frame from webcam")
                     time.sleep(0.1)
                     continue
+                
+                # Flip the webcam frame horizontally (mirror effect)
+                frame = cv2.flip(frame, 1)
                 
                 # Process frame for hand tracking
                 frame.flags.writeable = False
@@ -549,7 +718,7 @@ class IntegratedMeshEditor:
                     blended_img = cv2.addWeighted(mesh_img, alpha, frame, beta, 0)
                     display_img = blended_img
                 else:
-                    display_img = mesh_img
+                    display_img = mesh_img.copy()
                 
                 # Process and draw hand landmarks
                 if results.multi_hand_landmarks:
@@ -559,6 +728,9 @@ class IntegratedMeshEditor:
                         self.process_hand_gesture(hand_landmarks, frame)
                 else:
                     self.hand_landmarks = None
+                    # If hand disappears during pinch, end the pinch
+                    if self.is_pinching:
+                        self.end_pinch()
                 
                 # Draw UI elements
                 self.draw_ui(display_img)
@@ -566,7 +738,7 @@ class IntegratedMeshEditor:
                 # Show the integrated view
                 cv2.imshow("Integrated Mesh Editor", display_img)
                 
-                # Check for key presses
+                # Process keyboard shortcuts (now works in any mode)
                 key = cv2.waitKey(1) & 0xFF
                 if key == 27:  # ESC key
                     break
@@ -579,7 +751,14 @@ class IntegratedMeshEditor:
                 elif key == ord('l'):
                     self.handle_button_click("Lasso Select")
                 elif key == ord('e'):
-                    self.handle_button_click("Edit Mode")
+                    # Toggle between Lasso and Edit modes with 'e'
+                    if self.mode == "lasso":
+                        self.handle_button_click("Edit Mode")
+                    elif self.mode == "edit":
+                        self.handle_button_click("Lasso Select")
+                    else:
+                        # If in view mode, go to lasso first for selection
+                        self.handle_button_click("Lasso Select")
                 elif key == ord('f'):
                     self.set_front_view()
                 elif key == ord('t'):
@@ -595,6 +774,19 @@ class IntegratedMeshEditor:
                     self.mesh.vertices = o3d.utility.Vector3dVector(vertices)
                     self.mesh.compute_vertex_normals()
                     self.update_mesh_visualization()
+                elif key == ord('+') or key == ord('='):  # Plus key
+                    self.zoom += self.zoom_sensitivity
+                    self.zoom = min(2.0, self.zoom)
+                    self.view_control.set_zoom(self.zoom)
+                    self.update_mesh_visualization()
+                elif key == ord('-') or key == ord('_'):  # Minus key
+                    self.zoom -= self.zoom_sensitivity
+                    self.zoom = max(0.1, self.zoom)
+                    self.view_control.set_zoom(self.zoom)
+                    self.update_mesh_visualization()
+                
+                # Slight delay to reduce CPU usage
+                time.sleep(0.01)
                 
             except Exception as e:
                 print(f"Error in main loop: {e}")
@@ -606,6 +798,14 @@ class IntegratedMeshEditor:
         self.vis.destroy_window()
         print("Application closed")
 
+def main():
+    """Main entry point for the application."""
+    print("Starting Mesh Editor application...")
+    try:
+        editor = IntegratedMeshEditor("cylinder.stl")
+        editor.run()
+    except Exception as e:
+        print(f"Application error: {e}")
+
 if __name__ == "__main__":
-    editor = IntegratedMeshEditor("cylinder.stl")
-    editor.run()
+    main()
