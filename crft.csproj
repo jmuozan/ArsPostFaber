@@ -24,6 +24,11 @@
     <Compile Remove="Segment-Anything\**" />
     <EmbeddedResource Remove="Segment-Anything\**" />
     <None Remove="Segment-Anything\**" />
+    
+    <!-- Exclude mp folder from build since it contains duplicate definitions -->
+    <Compile Remove="mp\**" />
+    <EmbeddedResource Remove="mp\**" />
+    <None Remove="mp\**" />
   </ItemGroup>
   
   <PropertyGroup>

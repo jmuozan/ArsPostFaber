@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "Abr+DiLIP5E=",
+  "dgSpecHash": "UVV/kZQoXjo=",
   "success": true,
   "projectFilePath": "/Users/jorgemuyo/Desktop/crft/crft.csproj",
   "expectedPackageFiles": [
@@ -19,8 +19,6 @@
     "/Users/jorgemuyo/.nuget/packages/system.drawing.common/8.0.0/system.drawing.common.8.0.0.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.memory/4.5.5/system.memory.4.5.5.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.runtime.compilerservices.unsafe/6.0.0/system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
-    "/Users/jorgemuyo/.nuget/packages/microsoft.aspnetcore.app.ref/7.0.20/microsoft.aspnetcore.app.ref.7.0.20.nupkg.sha512",
-    "/Users/jorgemuyo/.nuget/packages/microsoft.netcore.app.ref/7.0.20/microsoft.netcore.app.ref.7.0.20.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/microsoft.windowsdesktop.app.ref/7.0.20/microsoft.windowsdesktop.app.ref.7.0.20.nupkg.sha512"
   ],
   "logs": []

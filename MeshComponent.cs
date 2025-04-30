@@ -60,7 +60,7 @@ namespace crft
         internal ViewMode _currentViewMode = ViewMode.Front;
         
         public MeshHandTrackingComponent()
-          : base("Mesh Hand Tracking", "MeshHandTrack", 
+          : base("Mesh Natural Edit", "MeshNaturalEdit", 
               "Displays a mesh with hand landmark tracking overlay",
               "Display", "Preview")
         {
@@ -1138,9 +1138,23 @@ if __name__ == '__main__':
         }
         
         
+        // Track mesh interaction state
+        internal bool _meshInteractionEnabled = false;
+        internal bool _meshSelectionInProgress = false;
+        internal List<int> _selectedVertexIndices = new List<int>();
+        private Point3d _lastHandPosition = Point3d.Origin;
+        private const float SELECTION_DISTANCE_THRESHOLD = 0.15f; // Distance threshold for selection
+        private const float DEFORMATION_STRENGTH = 0.05f;  // Deformation strength factor
+        
         // Create a composited frame with mesh visualization and hand landmarks
         private Bitmap CreateCompositedFrame(Bitmap originalFrame)
         {
+            // Process hand landmarks for mesh interaction if we have hand data
+            if (_handLandmarks.Count >= 21) // Need a complete hand with 21 landmarks
+            {
+                ProcessHandMeshInteraction();
+            }
+            
             // Create a new bitmap for our composited view
             Bitmap result = new Bitmap(originalFrame.Width, originalFrame.Height);
             
@@ -1168,6 +1182,16 @@ if __name__ == '__main__':
                         new PointF(centerX - 50, 10));
                 }
                 
+                // Draw mode indicator text
+                using (Font font = new Font("Arial", 10, FontStyle.Bold))
+                {
+                    string modeText = _meshInteractionEnabled ? "Mesh Editing Mode ON" : "Mesh Editing Mode OFF";
+                    Color modeColor = _meshInteractionEnabled ? Color.LightGreen : Color.LightGray;
+                    
+                    g.DrawString(modeText, font, new SolidBrush(modeColor),
+                        new PointF(10, 10));
+                }
+                
                 // Draw a rectangular highlight around the mesh area (more subtle)
                 using (Pen highlightPen = new Pen(Color.FromArgb(80, 200, 200, 200), 1))
                 {
@@ -1192,18 +1216,20 @@ if __name__ == '__main__':
                     float viewportSizeFactor = Math.Min(result.Width, result.Height);
                     float scaleFactor = viewportSizeFactor * 0.45f * (float)_zoomFactor; // Make hand larger and more visible
                     
-                    // Calculate animated position offset for more natural hand movement
-                    // in relation to the mesh - this makes the hand appear to "float" around the mesh
-                    double time = DateTime.Now.TimeOfDay.TotalSeconds;
-                    float xMovement = (float)(Math.Sin(time * 0.3) * 0.05); // Gentle horizontal drift
-                    float yMovement = (float)(Math.Cos(time * 0.4) * 0.03); // Gentle vertical drift
+                    // Offset for better positioning within view - no animation when in interaction mode
+                    float xOffset = 0.5f;
+                    float yOffset = 0.5f;
                     
-                    // Offset for better positioning within view
-                    float xOffset = 0.5f + xMovement; // Center of the view with slight animation
-                    float yOffset = 0.5f + yMovement; // Center of the view with slight animation
-                    
-                    // Note: Removed the backdrop circle and glow effect that was showing
-                    // even when hand landmarks weren't being detected properly
+                    // Only apply animation when not in interaction mode
+                    if (!_meshInteractionEnabled) 
+                    {
+                        // Calculate animated position offset for more natural hand movement
+                        double time = DateTime.Now.TimeOfDay.TotalSeconds;
+                        float xMovement = (float)(Math.Sin(time * 0.3) * 0.05); // Gentle horizontal drift
+                        float yMovement = (float)(Math.Cos(time * 0.4) * 0.03); // Gentle vertical drift
+                        xOffset += xMovement;
+                        yOffset += yMovement;
+                    }
                     
                     foreach (var point in _handLandmarks)
                     {
@@ -1216,8 +1242,6 @@ if __name__ == '__main__':
                     
                     // Draw landmarks directly in the mesh view with enhanced visibility
                     DrawHandLandmarksInView(g, overlayLandmarks);
-                    
-                    // We won't show the "Hand Tracking Active" text anymore as it was confusing users
                 }
                 
                 // Add a small webcam preview in the corner
@@ -1236,19 +1260,268 @@ if __name__ == '__main__':
                         new PointF(result.Width - previewWidth - 10, previewHeight + 15));
                 }
                 
-                // Add a footer with simplified component status
+                // Add a footer with component status and interaction info
                 using (Font font = new Font("Arial", 12, FontStyle.Bold))
                 {
                     string handStatus = (_handLandmarks.Count > 0) 
                         ? $"Hand Landmarks: {_handLandmarks.Count} detected" 
                         : "No hand landmarks detected";
                     
+                    // Add selection info if in interaction mode
+                    if (_meshInteractionEnabled && _selectedVertexIndices.Count > 0) 
+                    {
+                        handStatus += $" | Selected Vertices: {_selectedVertexIndices.Count}";
+                    }
+                    
                     g.DrawString(handStatus, font, Brushes.White, 
                         new PointF(10, result.Height - 30));
+                }
+                
+                // Add instruction text for mesh interaction
+                using (Font font = new Font("Arial", 10))
+                {
+                    if (_meshInteractionEnabled)
+                    {
+                        string instructions = "Make pinch gesture (thumb + index) to select mesh vertices";
+                        g.DrawString(instructions, font, Brushes.Yellow, 
+                            new PointF(10, 30));
+                            
+                        string moveInstructions = "Move hand to deform selected vertices";
+                        g.DrawString(moveInstructions, font, Brushes.Yellow, 
+                            new PointF(10, 50));
+                    }
+                    else
+                    {
+                        string instructions = "Make a fist to toggle mesh editing mode";
+                        g.DrawString(instructions, font, Brushes.LightGray, 
+                            new PointF(10, 30));
+                    }
                 }
             }
             
             return result;
+        }
+        
+        // Process hand landmarks for mesh interaction
+        private void ProcessHandMeshInteraction()
+        {
+            // Need full hand with 21 landmarks to work
+            if (_handLandmarks.Count < 21 || _displayMesh == null || _displayMesh.Vertices.Count == 0)
+                return;
+                
+            try
+            {
+                // Detect fist gesture to toggle interaction mode
+                if (DetectFistGesture())
+                {
+                    // Toggle the interaction mode with debouncing
+                    if (!_meshInteractionEnabled)
+                    {
+                        // Turning on mesh interaction
+                        _meshInteractionEnabled = true;
+                        Debug.WriteLine("Mesh interaction mode ENABLED");
+                    }
+                    else 
+                    {
+                        // Turning off mesh interaction and clearing selection
+                        _meshInteractionEnabled = false;
+                        _selectedVertexIndices.Clear();
+                        _meshSelectionInProgress = false;
+                        Debug.WriteLine("Mesh interaction mode DISABLED");
+                    }
+                    
+                    // Debouncing - wait for a bit before allowing another toggle
+                    System.Threading.Thread.Sleep(500);
+                }
+                
+                // Only process interaction when enabled
+                if (!_meshInteractionEnabled)
+                    return;
+                
+                // Get normalized 3D hand position from landmark positions 
+                // (using index finger tip as primary interaction point)
+                Point3d handPosition = GetHandPositionInMeshSpace();
+                
+                // Check if the hand is making a pinch gesture for selection
+                bool isPinching = DetectPinchGesture();
+                
+                // Handle mesh vertex selection
+                if (isPinching && !_meshSelectionInProgress)
+                {
+                    // Start a new selection
+                    _meshSelectionInProgress = true;
+                    SelectMeshVerticesNearHand(handPosition);
+                }
+                else if (!isPinching && _meshSelectionInProgress)
+                {
+                    // End the selection
+                    _meshSelectionInProgress = false;
+                }
+                
+                // If we have selected vertices and the hand has moved, deform the mesh
+                if (_selectedVertexIndices.Count > 0 && handPosition.DistanceTo(_lastHandPosition) > 0.01)
+                {
+                    // Calculate movement vector
+                    Vector3d movementVector = handPosition - _lastHandPosition;
+                    
+                    // Apply movement to selected vertices
+                    DeformSelectedVertices(movementVector);
+                }
+                
+                // Store current hand position for next frame
+                _lastHandPosition = handPosition;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in mesh interaction: {ex.Message}");
+            }
+        }
+        
+        // Detect if hand is making a fist gesture
+        private bool DetectFistGesture()
+        {
+            // A simple fist detection - all finger tips are close to the palm
+            if (_handLandmarks.Count < 21)
+                return false;
+                
+            // Get palm center position (wrist landmark)
+            PointF palmCenter = _handLandmarks[0];
+            
+            // Check if all fingertips (landmarks 4, 8, 12, 16, 20) are close to palm center
+            PointF thumbTip = _handLandmarks[4];
+            PointF indexTip = _handLandmarks[8];
+            PointF middleTip = _handLandmarks[12];
+            PointF ringTip = _handLandmarks[16];
+            PointF pinkyTip = _handLandmarks[20];
+            
+            // Calculate distances from palm to fingertips
+            float thumbDist = Distance(palmCenter, thumbTip);
+            float indexDist = Distance(palmCenter, indexTip);
+            float middleDist = Distance(palmCenter, middleTip);
+            float ringDist = Distance(palmCenter, ringTip);
+            float pinkyDist = Distance(palmCenter, pinkyTip);
+            
+            // Typical normalized distances for a fist
+            const float FIST_THRESHOLD = 0.2f;
+            
+            // Make sure fingers are bent (except thumb which has different dynamics)
+            return (indexDist < FIST_THRESHOLD && 
+                    middleDist < FIST_THRESHOLD && 
+                    ringDist < FIST_THRESHOLD && 
+                    pinkyDist < FIST_THRESHOLD);
+        }
+        
+        // Detect if hand is making a pinch gesture (thumb and index finger touching)
+        private bool DetectPinchGesture()
+        {
+            if (_handLandmarks.Count < 21)
+                return false;
+                
+            // Get thumb tip and index fingertip
+            PointF thumbTip = _handLandmarks[4];
+            PointF indexTip = _handLandmarks[8];
+            
+            // Check if thumb and index finger are close
+            float distance = Distance(thumbTip, indexTip);
+            
+            // Threshold for pinch detection in normalized coordinates
+            const float PINCH_THRESHOLD = 0.08f;
+            
+            return distance < PINCH_THRESHOLD;
+        }
+        
+        // Calculate 2D distance between points
+        private float Distance(PointF p1, PointF p2)
+        {
+            return (float)Math.Sqrt(
+                (p1.X - p2.X) * (p1.X - p2.X) + 
+                (p1.Y - p2.Y) * (p1.Y - p2.Y));
+        }
+        
+        // Convert hand position to 3D mesh space coordinates
+        private Point3d GetHandPositionInMeshSpace()
+        {
+            // Using index finger tip as the primary interaction point
+            PointF indexTip = _handLandmarks[8]; // Index fingertip is the 8th landmark
+            
+            // Convert from normalized (0-1) coordinates to mesh space
+            // Start by placing it in front of the mesh
+            BoundingBox bbox = _displayMesh.GetBoundingBox(true);
+            
+            // Convert from 0-1 range to -1 to 1 range (centered)
+            double xPos = (indexTip.X - 0.5) * 2.0;
+            double yPos = (indexTip.Y - 0.5) * 2.0;
+            
+            // Scale to mesh size
+            double meshWidth = bbox.Diagonal.X;
+            double meshHeight = bbox.Diagonal.Y;
+            double meshDepth = bbox.Diagonal.Z;
+            
+            // Create the 3D position with depth based on hand position
+            // Using a fixed depth when initially selecting
+            double zPos = 0; // Start at center depth
+            
+            // Get the world position relative to the mesh bounding box
+            Point3d worldPos = new Point3d(
+                bbox.Center.X + xPos * meshWidth * 0.5,
+                bbox.Center.Y + yPos * meshHeight * 0.5,
+                bbox.Center.Z + zPos * meshDepth * 0.5);
+                
+            return worldPos;
+        }
+        
+        // Select mesh vertices near the hand position
+        private void SelectMeshVerticesNearHand(Point3d handPosition)
+        {
+            // Clear previous selection
+            _selectedVertexIndices.Clear();
+            
+            // Get mesh bounding box to calculate relative distances
+            BoundingBox bbox = _displayMesh.GetBoundingBox(true);
+            double maxDist = bbox.Diagonal.Length * SELECTION_DISTANCE_THRESHOLD;
+            
+            // Find vertices within the selection distance
+            for (int i = 0; i < _displayMesh.Vertices.Count; i++)
+            {
+                Point3d vertex = _displayMesh.Vertices[i];
+                double dist = vertex.DistanceTo(handPosition);
+                
+                // If vertex is close enough, add to selection
+                if (dist < maxDist)
+                {
+                    _selectedVertexIndices.Add(i);
+                }
+            }
+            
+            Debug.WriteLine($"Selected {_selectedVertexIndices.Count} vertices");
+        }
+        
+        // Deform selected vertices based on hand movement
+        private void DeformSelectedVertices(Vector3d movementVector)
+        {
+            if (_selectedVertexIndices.Count == 0)
+                return;
+                
+            // Apply a scaled movement to all selected vertices
+            Vector3d scaledMovement = movementVector * DEFORMATION_STRENGTH;
+                
+            foreach (int vertexIndex in _selectedVertexIndices)
+            {
+                if (vertexIndex >= 0 && vertexIndex < _displayMesh.Vertices.Count)
+                {
+                    // Get current position
+                    Point3d currentPos = _displayMesh.Vertices[vertexIndex];
+                    
+                    // Apply movement
+                    Point3d newPos = currentPos + scaledMovement;
+                    
+                    // Update vertex position
+                    _displayMesh.Vertices.SetVertex(vertexIndex, newPos);
+                }
+            }
+            
+            // Update the mesh normals to ensure proper rendering
+            _displayMesh.RebuildNormals();
         }
         
         // Render the mesh as a wireframe with CONSISTENT FRONT VIEW
@@ -1313,26 +1586,30 @@ if __name__ == '__main__':
             
             // Note: Zoom controls are handled by form buttons, no need to draw them here
             
+            // First, project all vertices to screen coordinates so we can use them for both
+            // face rendering and selected vertex highlighting
+            Dictionary<int, PointF> projectedVertices = new Dictionary<int, PointF>();
+            for (int i = 0; i < _displayMesh.Vertices.Count; i++)
+            {
+                Point3d vertex = _displayMesh.Vertices[i];
+                PointF screenPt = Project3DTo2DWithCenter(vertex, cameraPos, target, up, scale, centerX, centerY);
+                projectedVertices[i] = screenPt;
+            }
+            
             // Draw faces with vibrant colors and clear edges
             foreach (var face in _displayMesh.Faces)
             {
                 // Get the vertices
-                Point3d v1 = _displayMesh.Vertices[face.A];
-                Point3d v2 = _displayMesh.Vertices[face.B];
-                Point3d v3 = _displayMesh.Vertices[face.C];
-                
-                // Project 3D points to 2D screen coordinates - FORCE CENTER
-                PointF p1 = Project3DTo2DWithCenter(v1, cameraPos, target, up, scale, centerX, centerY);
-                PointF p2 = Project3DTo2DWithCenter(v2, cameraPos, target, up, scale, centerX, centerY);
-                PointF p3 = Project3DTo2DWithCenter(v3, cameraPos, target, up, scale, centerX, centerY);
+                PointF p1 = projectedVertices[face.A];
+                PointF p2 = projectedVertices[face.B];
+                PointF p3 = projectedVertices[face.C];
                 
                 // Create points array for filling
                 PointF[] points;
                 
                 if (face.IsQuad)
                 {
-                    Point3d v4 = _displayMesh.Vertices[face.D];
-                    PointF p4 = Project3DTo2DWithCenter(v4, cameraPos, target, up, scale, centerX, centerY);
+                    PointF p4 = projectedVertices[face.D];
                     points = new PointF[] { p1, p2, p3, p4 };
                 }
                 else
@@ -1351,8 +1628,7 @@ if __name__ == '__main__':
                 {
                     if (face.IsQuad)
                     {
-                        Point3d v4 = _displayMesh.Vertices[face.D];
-                        PointF p4 = Project3DTo2DWithCenter(v4, cameraPos, target, up, scale, centerX, centerY);
+                        PointF p4 = projectedVertices[face.D];
                         
                         // Draw quad edges
                         g.DrawLine(edgePen, p1, p2);
@@ -1360,11 +1636,17 @@ if __name__ == '__main__':
                         g.DrawLine(edgePen, p3, p4);
                         g.DrawLine(edgePen, p4, p1);
                         
-                        // Add vertices as small circles at corners for better visibility
-                        foreach (var pt in new[] { p1, p2, p3, p4 })
-                        {
-                            g.FillEllipse(Brushes.White, pt.X - 2, pt.Y - 2, 4, 4);
-                        }
+                        // Add vertex dots with appropriate coloring 
+                        bool isASelected = _selectedVertexIndices.Contains(face.A);
+                        bool isBSelected = _selectedVertexIndices.Contains(face.B);
+                        bool isCSelected = _selectedVertexIndices.Contains(face.C);
+                        bool isDSelected = _selectedVertexIndices.Contains(face.D);
+                        
+                        // Draw vertex points with selection highlighting
+                        DrawVertexPoint(g, p1, isASelected);
+                        DrawVertexPoint(g, p2, isBSelected);
+                        DrawVertexPoint(g, p3, isCSelected);
+                        DrawVertexPoint(g, p4, isDSelected);
                     }
                     else
                     {
@@ -1373,12 +1655,134 @@ if __name__ == '__main__':
                         g.DrawLine(edgePen, p2, p3);
                         g.DrawLine(edgePen, p3, p1);
                         
-                        // Add vertices as small circles at corners
-                        foreach (var pt in new[] { p1, p2, p3 })
+                        // Add vertex dots with appropriate coloring
+                        bool isASelected = _selectedVertexIndices.Contains(face.A);
+                        bool isBSelected = _selectedVertexIndices.Contains(face.B);
+                        bool isCSelected = _selectedVertexIndices.Contains(face.C);
+                        
+                        // Draw vertex points with selection highlighting
+                        DrawVertexPoint(g, p1, isASelected);
+                        DrawVertexPoint(g, p2, isBSelected);
+                        DrawVertexPoint(g, p3, isCSelected);
+                    }
+                }
+            }
+            
+            // Visualize the hand position in 3D space when interaction is enabled
+            if (_meshInteractionEnabled && _handLandmarks.Count >= 21)
+            {
+                // Convert the hand position to 3D space for visualization
+                Point3d handPos = GetHandPositionInMeshSpace();
+                
+                // Project the 3D hand position to 2D screen coordinates
+                PointF screenHandPos = Project3DTo2DWithCenter(handPos, cameraPos, target, up, scale, centerX, centerY);
+                
+                // Draw the 3D hand cursor
+                DrawHandCursor(g, screenHandPos);
+                
+                // When in selection mode, show a selection sphere radius
+                if (_meshSelectionInProgress)
+                {
+                    // Calculate the selection radius in screen coordinates
+                    double selectionRadius = bbox.Diagonal.Length * SELECTION_DISTANCE_THRESHOLD;
+                    // Project a point at the selection radius distance from the hand position
+                    Point3d radiusPoint = handPos + new Vector3d(selectionRadius, 0, 0);
+                    PointF screenRadiusPoint = Project3DTo2DWithCenter(radiusPoint, cameraPos, target, up, scale, centerX, centerY);
+                    
+                    // Calculate the radius in screen pixels
+                    float screenRadius = Math.Abs(screenRadiusPoint.X - screenHandPos.X);
+                    
+                    // Draw the selection sphere as a circle
+                    using (Pen selectionPen = new Pen(Color.FromArgb(120, 255, 255, 0), 2))
+                    {
+                        selectionPen.DashStyle = System.Drawing.Drawing2D.DashStyle.Dash;
+                        g.DrawEllipse(selectionPen, 
+                            screenHandPos.X - screenRadius, 
+                            screenHandPos.Y - screenRadius, 
+                            screenRadius * 2, 
+                            screenRadius * 2);
+                    }
+                }
+                
+                // Visualize the fingertips in 3D space
+                if (_handLandmarks.Count >= 21)
+                {
+                    // Show index fingertip (landmark 8) and thumb tip (landmark 4) for pinch visualization
+                    PointF indexTip = _handLandmarks[8];
+                    PointF thumbTip = _handLandmarks[4];
+                    
+                    // Convert normalized 2D coordinates to 3D space
+                    double meshWidth = bbox.Diagonal.X;
+                    double meshHeight = bbox.Diagonal.Y;
+                    double meshDepth = bbox.Diagonal.Z;
+                    
+                    // Create 3D positions for fingertips
+                    Point3d index3D = new Point3d(
+                        meshCenter.X + (indexTip.X - 0.5) * meshWidth * 0.8,
+                        meshCenter.Y + (indexTip.Y - 0.5) * meshHeight * 0.8,
+                        meshCenter.Z
+                    );
+                    
+                    Point3d thumb3D = new Point3d(
+                        meshCenter.X + (thumbTip.X - 0.5) * meshWidth * 0.8,
+                        meshCenter.Y + (thumbTip.Y - 0.5) * meshHeight * 0.8,
+                        meshCenter.Z
+                    );
+                    
+                    // Project to screen coordinates
+                    PointF screenIndexPos = Project3DTo2DWithCenter(index3D, cameraPos, target, up, scale, centerX, centerY);
+                    PointF screenThumbPos = Project3DTo2DWithCenter(thumb3D, cameraPos, target, up, scale, centerX, centerY);
+                    
+                    // Draw the fingertips
+                    using (Brush indexBrush = new SolidBrush(Color.FromArgb(255, 0, 230, 255)))
+                    using (Brush thumbBrush = new SolidBrush(Color.FromArgb(255, 255, 90, 90)))
+                    using (Pen connectionPen = new Pen(Color.FromArgb(200, 255, 255, 255), 2))
+                    {
+                        // Draw connection between index and thumb for pinch visualization
+                        g.DrawLine(connectionPen, screenIndexPos, screenThumbPos);
+                        
+                        // Draw fingertips
+                        float tipSize = 8;
+                        g.FillEllipse(indexBrush, screenIndexPos.X - tipSize, screenIndexPos.Y - tipSize, tipSize * 2, tipSize * 2);
+                        g.FillEllipse(thumbBrush, screenThumbPos.X - tipSize, screenThumbPos.Y - tipSize, tipSize * 2, tipSize * 2);
+                        
+                        // Draw labels for the fingertips
+                        using (Font tipFont = new Font("Arial", 9, FontStyle.Bold))
                         {
-                            g.FillEllipse(Brushes.White, pt.X - 2, pt.Y - 2, 4, 4);
+                            g.DrawString("Index", tipFont, indexBrush, screenIndexPos.X + tipSize, screenIndexPos.Y - tipSize * 2);
+                            g.DrawString("Thumb", tipFont, thumbBrush, screenThumbPos.X + tipSize, screenThumbPos.Y - tipSize * 2);
+                        }
+                        
+                        // Check if pinching and visualize
+                        bool isPinching = DetectPinchGesture();
+                        if (isPinching)
+                        {
+                            // Draw pinch indicator
+                            float midX = (screenIndexPos.X + screenThumbPos.X) / 2;
+                            float midY = (screenIndexPos.Y + screenThumbPos.Y) / 2;
+                            using (Font pinchFont = new Font("Arial", 9, FontStyle.Bold))
+                            using (Brush pinchBrush = new SolidBrush(Color.FromArgb(255, 255, 255, 0)))
+                            {
+                                g.FillEllipse(pinchBrush, midX - 10, midY - 10, 20, 20);
+                                g.DrawString("PINCH", pinchFont, pinchBrush, midX + 12, midY - 6);
+                            }
                         }
                     }
+                }
+            }
+            
+            // Add a mesh interaction indicator if in interaction mode
+            if (_meshInteractionEnabled)
+            {
+                using (Font modeFont = new Font("Arial", 12, FontStyle.Bold))
+                {
+                    string statusText = _meshSelectionInProgress ? 
+                        "Selection in progress..." : 
+                        (_selectedVertexIndices.Count > 0 ? 
+                            $"Moving {_selectedVertexIndices.Count} vertices" : 
+                            "Ready for selection");
+                    
+                    g.DrawString(statusText, modeFont, Brushes.LightGreen, 10, height - 60);
                 }
             }
             
@@ -1390,6 +1794,44 @@ if __name__ == '__main__':
                 string zoomText = $"Zoom: {_zoomFactor:F1}x";
                 g.DrawString(viewText, infoFont, Brushes.White, width - 120, height - 60);
                 g.DrawString(zoomText, infoFont, Brushes.White, width - 120, height - 30);
+            }
+        }
+        
+        // Draw a 3D hand cursor to show the current hand position
+        private void DrawHandCursor(Graphics g, PointF position)
+        {
+            // Draw a crosshair cursor
+            using (Pen cursorPen = new Pen(Color.FromArgb(255, 0, 255, 180), 2))
+            {
+                // Draw crosshair
+                int size = 15;
+                g.DrawLine(cursorPen, position.X - size, position.Y, position.X + size, position.Y);
+                g.DrawLine(cursorPen, position.X, position.Y - size, position.X, position.Y + size);
+                
+                // Draw circle
+                g.DrawEllipse(cursorPen, position.X - size/2, position.Y - size/2, size, size);
+            }
+            
+            // Draw the cursor center
+            using (Brush centerBrush = new SolidBrush(Color.FromArgb(255, 255, 255, 0)))
+            {
+                g.FillEllipse(centerBrush, position.X - 4, position.Y - 4, 8, 8);
+            }
+        }
+        
+        // Helper method to draw a vertex point with selection highlighting
+        private void DrawVertexPoint(Graphics g, PointF point, bool isSelected)
+        {
+            if (isSelected)
+            {
+                // Draw selected vertices larger and with a highlight color
+                g.FillEllipse(Brushes.Yellow, point.X - 4, point.Y - 4, 8, 8);
+                g.DrawEllipse(new Pen(Color.Red, 1), point.X - 5, point.Y - 5, 10, 10);
+            }
+            else
+            {
+                // Draw regular vertices as small white dots
+                g.FillEllipse(Brushes.White, point.X - 2, point.Y - 2, 4, 4);
             }
         }
         
@@ -1913,6 +2355,7 @@ if __name__ == '__main__':
         private ComboBox _viewModeDropdown;
         private TrackBar _zoomSlider;
         private Label _zoomLabel;
+        private Button _toggleMeshEditButton; // Button to toggle mesh deformation mode
 
         public MeshHandTrackingViewer(MeshHandTrackingComponent component)
         {
@@ -1977,6 +2420,25 @@ if __name__ == '__main__':
             _viewModeDropdown.Items.AddRange(Enum.GetNames(typeof(MeshHandTrackingComponent.ViewMode)));
             _viewModeDropdown.SelectedIndex = 0; // Set to Front by default
             _viewModeDropdown.SelectedIndexChanged += new EventHandler(ViewModeDropdown_SelectedIndexChanged);
+            
+            // Create button to toggle mesh editing mode
+            _toggleMeshEditButton = new Button();
+            _toggleMeshEditButton.Text = "Mesh Edit Mode: OFF";
+            _toggleMeshEditButton.Size = new System.Drawing.Size(160, 28);
+            _toggleMeshEditButton.Location = new System.Drawing.Point(10, 170);
+            _toggleMeshEditButton.BackColor = Color.FromArgb(60, 60, 60);
+            _toggleMeshEditButton.ForeColor = Color.White;
+            _toggleMeshEditButton.FlatStyle = FlatStyle.Flat;
+            _toggleMeshEditButton.Font = new Font("Arial", 9);
+            _toggleMeshEditButton.Click += new EventHandler(ToggleMeshEditButton_Click);
+            _toggleMeshEditButton.MouseEnter += (s, e) => { 
+                if (!_component._meshInteractionEnabled)
+                    _toggleMeshEditButton.BackColor = Color.FromArgb(80, 80, 80); 
+            };
+            _toggleMeshEditButton.MouseLeave += (s, e) => { 
+                if (!_component._meshInteractionEnabled)
+                    _toggleMeshEditButton.BackColor = Color.FromArgb(60, 60, 60); 
+            };
             
             // Create zoom label - improved position
             _zoomLabel = new Label();
@@ -2049,6 +2511,7 @@ if __name__ == '__main__':
             this.Controls.Add(_zoomInButton);
             this.Controls.Add(_zoomOutButton);
             this.Controls.Add(handTrackingCheckbox);
+            this.Controls.Add(_toggleMeshEditButton);
             
             // Set up timer for automatic refresh to ensure hand tracking stays visible
             System.Windows.Forms.Timer refreshTimer = new System.Windows.Forms.Timer();
@@ -2515,6 +2978,40 @@ if __name__ == '__main__':
             }
             
             base.OnFormClosed(e);
+        }
+        
+        private void ToggleMeshEditButton_Click(object sender, EventArgs e)
+        {
+            if (_component != null)
+            {
+                // Toggle the mesh editing mode
+                _component._meshInteractionEnabled = !_component._meshInteractionEnabled;
+                
+                // Update button appearance based on state
+                if (_component._meshInteractionEnabled)
+                {
+                    _toggleMeshEditButton.Text = "Mesh Edit Mode: ON";
+                    _toggleMeshEditButton.BackColor = Color.FromArgb(60, 180, 60);
+                }
+                else
+                {
+                    _toggleMeshEditButton.Text = "Mesh Edit Mode: OFF";
+                    _toggleMeshEditButton.BackColor = Color.FromArgb(60, 60, 60);
+                    
+                    // Clear any active selection when turning off editing mode
+                    _component._selectedVertexIndices.Clear();
+                    _component._meshSelectionInProgress = false;
+                }
+                
+                // Force redraw to show updated state
+                _pictureBox.Invalidate();
+                
+                // Update Grasshopper solution to reflect changes
+                if (_component.OnPingDocument() != null)
+                {
+                    _component.OnPingDocument().NewSolution(false);
+                }
+            }
         }
     }
 }

@@ -1,3 +1,4 @@
 segmentanything/checkpoints
 bin/Debug/net7.0/runtimes/ios/native/onnxruntime.xcframework/ios-arm64/onnxruntime.framework/onnxruntime
 bin/Debug/net7.0/runtimes/ios/native/onnxruntime.xcframework/ios-arm64_x86_64-simulator/onnxruntime.framework/onnxruntime
+__pycache__
