@@ -20,7 +20,7 @@ class IntegratedMeshEditor:
         self.mesh_modified = False
         self.is_pinching = False  # Add is_pinching attribute
         self.initial_pinch_pos = None  # Track initial pinch position
-        self.right_hand_detected = False  # Track if current hand is right hand
+        self.active_hand = "right"  # Can be "right" or "left" - determines which hand controls the mesh
         
         # Add colors for different parts
         self.vertex_color = [0.3, 0.7, 1.0]  # Blue for vertices
@@ -31,7 +31,7 @@ class IntegratedMeshEditor:
         # Sensitivity settings
         self.rotation_sensitivity = 0.2  # Reduced for finer control
         self.zoom_sensitivity = 0.03  # Reduced for finer control
-        self.movement_sensitivity = 0.06  # Doubled for faster response (original: 0.03)
+        self.movement_sensitivity = 0.1  # Increased for faster response
         
         # Initialize MediaPipe hands
         print("Initializing MediaPipe...")
@@ -41,7 +41,7 @@ class IntegratedMeshEditor:
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=2,
-            min_detection_confidence=0.7,
+            min_detection_confidence=0.5,  # Reduced for better performance
             min_tracking_confidence=0.5
         )
         
@@ -91,138 +91,44 @@ class IntegratedMeshEditor:
     def clean_mesh(self):
         """Clean the mesh by removing any purple sphere in the center."""
         print("Cleaning mesh...")
-        # Try color-based approach first
-        self.remove_purple_vertices()
-        # Then try position-based approach as backup
-        self.remove_center_geometry()
-    
-    def remove_purple_vertices(self):
-        """Remove vertices with purple color from the mesh."""
         try:
-            print("Checking for purple vertices...")
-            
-            # First check if we need to rebuild vertex colors
+            # Remove purple vertices first
             vertices = np.asarray(self.mesh.vertices)
             triangles = np.asarray(self.mesh.triangles)
             colors = np.asarray(self.mesh.vertex_colors)
             
-            if len(colors) == 0:
-                # If no colors, just paint the mesh and return
-                self.mesh.paint_uniform_color([0.7, 0.7, 0.7])
-                print("No vertex colors found in mesh")
-                return
-                
-            # Look for purple vertices - very specific to the problem shown in screenshot
-            purple_vertices = set()
-            for i, color in enumerate(colors):
-                # Purple/magenta detection - high red and blue values, low green
-                if color[0] > 0.7 and color[2] > 0.7 and color[1] < 0.3:
-                    purple_vertices.add(i)
-            
-            if purple_vertices:
-                print(f"Found {len(purple_vertices)} purple vertices")
-                
-                # Create list of triangles to keep
-                triangles_to_keep = []
-                for i, triangle in enumerate(triangles):
-                    # If any vertex in this triangle is purple, skip it
-                    if (triangle[0] in purple_vertices or 
-                        triangle[1] in purple_vertices or 
-                        triangle[2] in purple_vertices):
-                        continue
-                    triangles_to_keep.append(i)
-                
-                if len(triangles_to_keep) < len(triangles):
-                    # Create a new mesh without purple triangles
-                    print(f"Removing {len(triangles) - len(triangles_to_keep)} triangles with purple vertices")
-                    new_triangles = triangles[triangles_to_keep]
-                    
-                    new_mesh = o3d.geometry.TriangleMesh()
-                    new_mesh.vertices = o3d.utility.Vector3dVector(vertices)
-                    new_mesh.triangles = o3d.utility.Vector3iVector(new_triangles)
-                    
-                    # Reset colors for the new mesh
-                    new_mesh.paint_uniform_color([0.7, 0.7, 0.7])
-                    new_mesh.compute_vertex_normals()
-                    
-                    self.mesh = new_mesh
-                    print("Purple vertices removed!")
-                else:
-                    print("No purple triangles found to remove")
-            else:
-                print("No purple vertices found in this mesh")
-                
-        except Exception as e:
-            print(f"Error removing purple vertices: {e}")
-    
-    def remove_center_geometry(self):
-        """Remove any geometry located at the center of the mesh."""
-        try:
-            print("Checking for center geometry...")
-            # Get mesh vertices and find center region
-            vertices = np.asarray(self.mesh.vertices)
-            if len(vertices) == 0:
-                return
-                
-            # Find the mesh center
+            # Start with a position-based approach - more reliable
             center = np.mean(vertices, axis=0)
-            
-            # Get the triangles
-            triangles = np.asarray(self.mesh.triangles)
-            if len(triangles) == 0:
-                return
-                
-            # Calculate distance from each vertex to center
             distances = np.linalg.norm(vertices - center, axis=1)
+            threshold = np.median(distances) * 0.3
+            central_vertices = set(np.where(distances < threshold)[0])
             
-            # Get the median distance - we'll use this to identify central vertices
-            median_distance = np.median(distances)
+            # If colors exist, also try to find purple vertices
+            if len(colors) > 0:
+                for i, color in enumerate(colors):
+                    if color[0] > 0.7 and color[2] > 0.7 and color[1] < 0.3:
+                        central_vertices.add(i)
             
-            # Use a more aggressive threshold - 30% of median distance
-            threshold = median_distance * 0.3
-            central_vertices_indices = np.where(distances < threshold)[0]
-            
-            if len(central_vertices_indices) > 0 and len(central_vertices_indices) < len(vertices) * 0.2:
-                print(f"Found {len(central_vertices_indices)} vertices near center that might form a sphere")
-                
-                # Convert to set for faster lookups
-                central_vertices = set(central_vertices_indices)
-                
-                # Create a list of triangles to keep
-                # More aggressive: remove ANY triangle with ANY vertex in the central region
+            # Filter triangles
+            if central_vertices:
                 keep_triangles = []
-                
                 for i, triangle in enumerate(triangles):
-                    # If any vertex of this triangle is in central_vertices, skip it
-                    if (triangle[0] in central_vertices or 
-                        triangle[1] in central_vertices or 
-                        triangle[2] in central_vertices):
-                        continue
-                    keep_triangles.append(i)
+                    if not (triangle[0] in central_vertices or 
+                           triangle[1] in central_vertices or 
+                           triangle[2] in central_vertices):
+                        keep_triangles.append(i)
                 
                 if len(keep_triangles) < len(triangles):
-                    print(f"Removing {len(triangles) - len(keep_triangles)} triangles from center")
                     new_triangles = triangles[keep_triangles]
-                    
-                    # Create a new mesh with only the kept triangles
                     new_mesh = o3d.geometry.TriangleMesh()
                     new_mesh.vertices = o3d.utility.Vector3dVector(vertices)
                     new_mesh.triangles = o3d.utility.Vector3iVector(new_triangles)
-                    
-                    # Reset colors
                     new_mesh.paint_uniform_color([0.7, 0.7, 0.7])
                     new_mesh.compute_vertex_normals()
-                    
-                    # Replace the current mesh
                     self.mesh = new_mesh
-                    print("Center geometry removed from mesh")
-                else:
-                    print("No center triangles identified for removal")
-            else:
-                print("No significant center geometry detected")
-                
+                    print("Central geometry removed from mesh")
         except Exception as e:
-            print(f"Error removing center geometry: {e}")
+            print(f"Error cleaning mesh: {e}")
     
     def ensure_mesh_exists(self, mesh_path):
         """Create a cylinder mesh if the file doesn't exist."""
@@ -312,6 +218,11 @@ class IntegratedMeshEditor:
             
             {"name": "Save Mesh", "color": (0, 200, 0), "x": 10 + 3 * (self.button_width + self.button_margin), 
              "y": 10 + self.button_height + self.button_margin, 
+             "width": self.button_width, "height": self.button_height, "active": False},
+             
+            # Add hand selector button
+            {"name": "Use RIGHT Hand", "color": (255, 153, 51), "x": 10, 
+             "y": 10 + 2 * (self.button_height + self.button_margin), 
              "width": self.button_width, "height": self.button_height, "active": False}
         ]
     
@@ -368,32 +279,8 @@ class IntegratedMeshEditor:
             material = self.vis.get_render_option()
             material.point_size = 8.0  # Make vertices larger
             material.line_width = 2.0  # Thicker lines for edges
-            
-            # Try to enable point normal visualization
-            try:
-                material.point_show_normal = True
-            except (AttributeError, TypeError):
-                pass
-                
-            # Try to show point color
-            try:
-                material.show_point_color = True
-            except (AttributeError, TypeError):
-                pass
-                
-            # Try to enable back face rendering
-            try:
-                material.mesh_show_back_face = True
-            except (AttributeError, TypeError):
-                pass
-                
-            # Try to display wireframe (edges)
-            try:
-                material.mesh_show_wireframe = True
-            except (AttributeError, TypeError):
-                pass
         except Exception as e:
-            print(f"Warning: Could not set some rendering options: {e}")
+            pass
         
         # Create a wireframe version of the mesh to better show edges
         try:
@@ -407,8 +294,8 @@ class IntegratedMeshEditor:
             else:
                 self.vis.add_geometry(edges)
                 self.edges_added = True
-        except Exception as e:
-            print(f"Warning: Could not create edge visualization: {e}")
+        except Exception:
+            pass
         
         # Highlight selected vertices
         vertex_colors = np.asarray(self.mesh.vertex_colors)
@@ -435,12 +322,16 @@ class IntegratedMeshEditor:
         """End the pinching gesture."""
         self.is_pinching = False
         self.initial_pinch_pos = None
-        print("Pinch gesture ended")
     
     def draw_ui(self, frame):
         """Draw the UI elements on the frame."""
         # Draw mode indicator background
         cv2.rectangle(frame, (0, 0), (frame.shape[1], 100), (40, 40, 40), -1)
+        
+        # Update hand selector button text
+        for button in self.buttons:
+            if "Hand" in button["name"]:
+                button["name"] = f"Use {self.active_hand.upper()} Hand"
         
         # Draw buttons
         for button in self.buttons:
@@ -469,22 +360,16 @@ class IntegratedMeshEditor:
         cv2.putText(frame, f"Selected vertices: {len(self.selected_vertices)}", (250, 80), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         
-        # Display right/left hand status
-        hand_status = "Right Hand" if self.right_hand_detected else "Left/No Hand"
-        hand_color = (0, 255, 0) if self.right_hand_detected else (0, 165, 255)
-        cv2.putText(frame, f"Hand: {hand_status}", (500, 80), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, hand_color, 1)
-        
         # Draw lasso if in lasso mode
         if self.mode == "lasso" and len(self.lasso_points) > 1:
             pts = np.array(self.lasso_points, np.int32)
             pts = pts.reshape((-1, 1, 2))
             cv2.polylines(frame, [pts], False, (0, 255, 0), 2)
     
-    def detect_right_hand(self, hand_landmarks, results):
+    def detect_right_hand(self, hand_landmarks, results=None):
         """Detect if the hand is a right hand."""
         # MediaPipe provides hand classification (right/left) in multi_handedness
-        if hasattr(results, 'multi_handedness') and results.multi_handedness:
+        if results and hasattr(results, 'multi_handedness') and results.multi_handedness:
             for idx, handedness in enumerate(results.multi_handedness):
                 # Check if this is the hand we're processing
                 if results.multi_hand_landmarks[idx] == hand_landmarks:
@@ -493,12 +378,35 @@ class IntegratedMeshEditor:
                     # Check if it's a right hand
                     return classification.label.lower() == "right"
         
-        # If we can't determine, assume it's not a right hand for safety
-        return False
+        # Fallback method if results not provided
+        try:
+            # Get thumb and pinky positions
+            thumb_tip = hand_landmarks.landmark[self.mp_hands.HandLandmark.THUMB_TIP]
+            pinky_tip = hand_landmarks.landmark[self.mp_hands.HandLandmark.PINKY_TIP]
+            
+            # Check thumb position relative to other fingers
+            if thumb_tip.x < pinky_tip.x:
+                # Thumb is to the left of pinky, likely a right hand
+                return True
+            else:
+                # Thumb is to the right of pinky, likely a left hand
+                return False
+        except:
+            # Default to assuming it's a right hand for safety
+            return True
     
-    def draw_hand_landmarks(self, frame, hand_landmarks, is_right_hand=False):
+    def is_active_hand(self, hand_landmarks, results=None):
+        """Check if the detected hand is the active hand for editing."""
+        is_right = self.detect_right_hand(hand_landmarks, results)
+        return (is_right and self.active_hand == "right") or (not is_right and self.active_hand == "left")
+    
+    def draw_hand_landmarks(self, frame, hand_landmarks, results=None):
         """Draw hand landmarks on the frame using MediaPipe."""
         if hand_landmarks:
+            # Detect if this is a right hand
+            is_right = self.detect_right_hand(hand_landmarks, results)
+            is_active = (is_right and self.active_hand == "right") or (not is_right and self.active_hand == "left")
+            
             # Draw hand landmarks
             self.mp_drawing.draw_landmarks(
                 frame,
@@ -523,11 +431,11 @@ class IntegratedMeshEditor:
                     (thumb_tip.y - index_tip.y) ** 2
                 )
                 
-                # Set color based on pinch and whether it's the right hand
-                if is_right_hand:
+                # Set color based on pinch and whether it's the active hand
+                if is_active:
                     color = (0, 0, 255) if distance < 0.08 else (0, 255, 0)
                 else:
-                    # Gray for left hand (non-functional)
+                    # Gray for inactive hand
                     color = (150, 150, 150)
                 
                 # Draw line between index and thumb
@@ -538,10 +446,12 @@ class IntegratedMeshEditor:
                 mid_y = (thumb_pos[1] + index_pos[1]) // 2
                 cv2.circle(frame, (mid_x, mid_y), 5, color, -1)
                 
-                # Add right/left hand indicator text near the hand
-                label = "Right" if is_right_hand else "Left"
-                label_color = (0, 255, 0) if is_right_hand else (0, 165, 255)
-                cv2.putText(frame, label, (thumb_pos[0] - 30, thumb_pos[1] - 20),
+                # Add hand indicator text near the hand
+                hand_type = "Right" if is_right else "Left"
+                status = "ACTIVE" if is_active else "INACTIVE"
+                label = f"{hand_type}: {status}"
+                label_color = (0, 255, 0) if is_active else (150, 150, 150)
+                cv2.putText(frame, label, (thumb_pos[0] - 50, thumb_pos[1] - 20),
                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, label_color, 1)
     
     def mouse_callback(self, event, x, y, flags, param):
@@ -674,6 +584,15 @@ class IntegratedMeshEditor:
         
         elif button_name == "Save Mesh":
             self.save_mesh()
+            
+        elif "Hand" in button_name:  # Match any button with "Hand" in the name
+            # Toggle between right and left hand
+            if self.active_hand == "right":
+                self.active_hand = "left"
+                print("Switched to LEFT hand control")
+            else:
+                self.active_hand = "right"
+                print("Switched to RIGHT hand control")
     
     def process_lasso_selection(self):
         """Process the lasso selection to select vertices."""
@@ -749,9 +668,20 @@ class IntegratedMeshEditor:
         
         return [x, y]
     
-    def process_hand_gesture(self, hand_landmarks, frame):
+    def process_hand_gesture(self, hand_landmarks, frame, results=None):
         """Process hand gestures for mesh editing."""
         if self.mode != "edit" or not hand_landmarks:
+            return
+            
+        # Check if this is the active hand we want to use
+        is_right = self.detect_right_hand(hand_landmarks, results)
+        is_active_hand = (is_right and self.active_hand == "right") or (not is_right and self.active_hand == "left")
+        
+        # Only process gestures for the active hand
+        if not is_active_hand:
+            # If previously pinching with active hand and now using inactive hand, end the pinch
+            if self.is_pinching:
+                self.end_pinch()
             return
         
         # Get thumb and index finger positions
@@ -764,8 +694,8 @@ class IntegratedMeshEditor:
             (thumb_tip.y - index_tip.y) ** 2
         )
         
-        # Check for pinch gesture - increase threshold for looser pinch detection
-        is_pinching = distance < 0.12  # Increased from 0.08 for looser pinch
+        # Check for pinch gesture - increased threshold for better detection
+        is_pinching = distance < 0.15  # Increased for better detection
         
         # Track movement of pinch point
         pinch_center = [(thumb_tip.x + index_tip.x) / 2, 
@@ -775,7 +705,6 @@ class IntegratedMeshEditor:
         # Store initial pinch position when starting a pinch
         if is_pinching and not self.is_pinching:
             self.initial_pinch_pos = pinch_center
-            print("Pinch started")
         
         # Update the is_pinching state
         self.is_pinching = is_pinching
@@ -787,34 +716,36 @@ class IntegratedMeshEditor:
             delta_y = pinch_center[1] - self.initial_pinch_pos[1]
             delta_z = pinch_center[2] - self.initial_pinch_pos[2]
             
-            # Apply scaling factor - increased for more responsive movement
-            movement_scale = 10.0  # Increased from 5.0 for looser movement
+            # Apply scaling factor for more responsive movement
+            movement_scale = 25.0  # Increased for faster response
             
-            # Convert to -1 to 1 range and apply scaling
-            hand_x = delta_x * movement_scale
-            hand_y = -delta_y * movement_scale  # Invert Y for intuitive up/down
-            hand_z = delta_z * movement_scale
+            # Fix inverted controls - negate delta_y so up movement = up on screen
+            delta_y = -delta_y  # This makes movement follow hand direction naturally
             
-            # Adjust based on current view to make movement more intuitive
+            # Apply view-dependent movement for better XY alignment with hand movement
+            # Get current view direction and camera parameters
             param = self.view_control.convert_to_pinhole_camera_parameters()
             extrinsic = np.array(param.extrinsic)
             
-            # Create view-aligned movement vector
-            view_aligned_movement = np.array([hand_x, hand_y, hand_z])
+            # Extract camera orientation vectors from the extrinsic matrix
+            right_dir = extrinsic[:3, 0]  # Camera's X axis (right direction)
+            up_dir = extrinsic[:3, 1]     # Camera's Y axis (up direction)
             
-            # Transform movement to view space
-            rotation = extrinsic[:3, :3].T  # Transpose for inverse rotation
-            movement = rotation @ view_aligned_movement * self.movement_sensitivity
+            # Create movement vector based on 2D screen movement
+            view_movement = (right_dir * delta_x * movement_scale + 
+                             up_dir * delta_y * movement_scale)
             
-            # Save current position for history
+            # Scale by sensitivity factor
+            movement = view_movement * self.movement_sensitivity
+            
+            # Apply movement to selected vertices
             vertices = np.asarray(self.mesh.vertices)
             before_positions = {idx: vertices[idx].copy() for idx in self.selected_vertices}
             
-            # Apply movement to selected vertices
             for idx in self.selected_vertices:
                 vertices[idx] += movement
             
-            # Save after positions for history
+            # Save positions for undo history
             after_positions = {idx: vertices[idx].copy() for idx in self.selected_vertices}
             self.vertex_movement_history.append((before_positions, after_positions))
             
@@ -826,12 +757,11 @@ class IntegratedMeshEditor:
             # Update visualization
             self.update_mesh_visualization()
             
-            # Update initial position for smoother tracking (more responsive to new movements)
-            # Reset initial position more frequently for smoother tracking
+            # Update initial position more frequently for smoother tracking
             self.initial_pinch_pos = [
-                self.initial_pinch_pos[0] + (pinch_center[0] - self.initial_pinch_pos[0]) * 0.5,
-                self.initial_pinch_pos[1] + (pinch_center[1] - self.initial_pinch_pos[1]) * 0.5,
-                self.initial_pinch_pos[2] + (pinch_center[2] - self.initial_pinch_pos[2]) * 0.5
+                self.initial_pinch_pos[0] + (pinch_center[0] - self.initial_pinch_pos[0]) * 0.8,
+                self.initial_pinch_pos[1] + (pinch_center[1] - self.initial_pinch_pos[1]) * 0.8,
+                self.initial_pinch_pos[2] + (pinch_center[2] - self.initial_pinch_pos[2]) * 0.8
             ]
     
     def run(self):
