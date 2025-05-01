@@ -24,8 +24,10 @@ class IntegratedMeshEditor:
         self.mesh_modified = False
         self.is_pinching = False
         self.initial_pinch_pos = None
+        self.initial_mouse_edit_pos = None  # For mouse-based editing
         self.active_hand = "right"  # Can be "right" or "left"
         self.show_help = False  # Toggle help overlay
+        self.use_mouse_for_edit = True  # Toggle to use mouse instead of hand for editing
         
         # Modern UI colors
         self.bg_color = (20, 20, 20)  # Dark background
@@ -93,9 +95,7 @@ class IntegratedMeshEditor:
         # Last mouse position
         self.last_position = None
         self.is_dragging = False
-        self.rotation = [0, 0, 0]  # Euler angles for rotation
-        self.translation = [0, 0, 0]
-        self.zoom = 0.8
+        self.is_right_dragging = False  # For right-click drag editing
         
         # Movement history for mesh vertices
         self.vertex_movement_history = deque(maxlen=10)  # Store last 10 movements
@@ -205,7 +205,7 @@ class IntegratedMeshEditor:
         self.dropdown_width = 200
         self.dropdown_item_height = 36
         
-        # Define the top menu items
+        # Define the top menu items - Fix for Help button action
         self.top_menu = [
             {"name": "Mode", "x": 10, "width": 100, "active": False, "dropdown": [
                 {"name": "View", "action": "set_view_mode"},
@@ -221,11 +221,16 @@ class IntegratedMeshEditor:
                 {"name": "Reset", "action": "reset_mesh"},
                 {"name": "Save", "action": "save_mesh"}
             ]},
-            {"name": "Hand", "x": 340, "width": 100, "active": False, "dropdown": [
+            {"name": "Input", "x": 340, "width": 100, "active": False, "dropdown": [
+                {"name": "Use Hand Tracking", "action": "toggle_edit_input"},
+                {"name": "Use Mouse (Right-Click)", "action": "toggle_edit_input"}
+            ]},
+            {"name": "Hand", "x": 450, "width": 100, "active": False, "dropdown": [
                 {"name": "Use Right Hand", "action": "toggle_hand"},
                 {"name": "Use Left Hand", "action": "toggle_hand"}
             ]},
-            {"name": "Help", "x": 450, "width": 100, "active": False, "action": "toggle_help"}
+            # Fixed: Making the Help button a direct action instead of dropdown
+            {"name": "Help", "x": 560, "width": 100, "active": False, "action": "toggle_help"}
         ]
         
         # Calculate positions for each menu item
@@ -242,7 +247,9 @@ class IntegratedMeshEditor:
         self.view_control.set_lookat([0, 0, 0])  # Look at origin
         self.view_control.set_front([0, 0, 1])   # Look from +Z axis
         self.view_control.set_up([0, 1, 0])      # Y is up
-        self.rotation = [0, 0, 0]
+        
+        # For consistent orbit controls, we no longer use Euler angles directly 
+        # Instead just let Open3D ViewControl handle the rotations
         self.update_mesh_visualization()
     
     def set_top_view(self):
@@ -250,7 +257,8 @@ class IntegratedMeshEditor:
         self.view_control.set_lookat([0, 0, 0])  # Look at origin
         self.view_control.set_front([0, 1, 0])   # Look from +Y axis
         self.view_control.set_up([0, 0, -1])     # -Z is up
-        self.rotation = [90, 0, 0]
+        
+        # For consistent orbit controls, we no longer use Euler angles directly
         self.update_mesh_visualization()
     
     def set_side_view(self):
@@ -258,7 +266,8 @@ class IntegratedMeshEditor:
         self.view_control.set_lookat([0, 0, 0])  # Look at origin
         self.view_control.set_front([1, 0, 0])   # Look from +X axis
         self.view_control.set_up([0, 1, 0])      # Y is up
-        self.rotation = [0, 90, 0]
+        
+        # For consistent orbit controls, we no longer use Euler angles directly
         self.update_mesh_visualization()
     
     def set_view_mode(self):
@@ -279,6 +288,14 @@ class IntegratedMeshEditor:
         self.lasso_points = []
         self.lasso_start_point = None
         
+    def toggle_edit_input(self):
+        """Toggle between hand tracking and mouse for editing."""
+        self.use_mouse_for_edit = not self.use_mouse_for_edit
+        if self.use_mouse_for_edit:
+            print("Switched to Mouse control (right-click drag)")
+        else:
+            print("Switched to Hand tracking control")
+        
     def toggle_hand(self):
         """Toggle between right and left hand for control."""
         if self.active_hand == "right":
@@ -291,6 +308,7 @@ class IntegratedMeshEditor:
     def toggle_help(self):
         """Toggle help display."""
         self.show_help = not self.show_help
+        print(f"Help overlay {'shown' if self.show_help else 'hidden'}")
     
     def reset_mesh(self):
         """Reset mesh to original state."""
@@ -353,8 +371,9 @@ class IntegratedMeshEditor:
         # Draw top menu bar background
         cv2.rectangle(frame, (0, 0), (w, self.menu_height), self.bg_color, -1)
         
-        # Draw mode indicator and status info
-        status_text = f"Mode: {self.mode.upper()} | Selected: {len(self.selected_vertices)}"
+        # Draw mode and input info
+        input_method = "Mouse (Right-Click)" if self.use_mouse_for_edit else f"{self.active_hand.upper()} Hand"
+        status_text = f"Mode: {self.mode.upper()} | Input: {input_method} | Selected: {len(self.selected_vertices)}"
         status_x = w - 10 - cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0][0]
         cv2.putText(frame, status_text, (status_x, 27), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.primary_color, 1)
@@ -400,13 +419,23 @@ class IntegratedMeshEditor:
                 for i, option in enumerate(item["dropdown"]):
                     option_y = dropdown_y + i * self.dropdown_item_height
                     
-                    # Highlight item for active mode or hand
+                    # Highlight item based on current state
                     highlighted = False
+                    
+                    # Mode dropdown
                     if item["name"] == "Mode" and option["name"].lower().replace(" ", "_") == self.mode:
                         highlighted = True
+                    
+                    # Hand dropdown
                     elif item["name"] == "Hand" and (
                         (option["name"].lower().find("right") >= 0 and self.active_hand == "right") or
                         (option["name"].lower().find("left") >= 0 and self.active_hand == "left")):
+                        highlighted = True
+                    
+                    # Input method dropdown
+                    elif item["name"] == "Input" and (
+                        (option["name"].lower().find("mouse") >= 0 and self.use_mouse_for_edit) or
+                        (option["name"].lower().find("hand") >= 0 and not self.use_mouse_for_edit)):
                         highlighted = True
                         
                     # Draw item background if highlighted
@@ -441,6 +470,14 @@ class IntegratedMeshEditor:
                              last_point, 
                              self.lasso_start_point, 
                              (0, 255, 255), 1)
+                             
+        # Show visual indicator for right-click edit mode
+        if self.mode == "edit" and self.use_mouse_for_edit and self.is_right_dragging:
+            # Draw a circle at the point where right mouse button was pressed
+            cv2.circle(frame, self.initial_mouse_edit_pos, 5, (0, 200, 255), -1)
+            # Draw line to current position
+            if self.last_position:
+                cv2.line(frame, self.initial_mouse_edit_pos, self.last_position, (0, 200, 255), 2)
         
         # Draw help overlay if enabled
         if self.show_help:
@@ -471,37 +508,38 @@ class IntegratedMeshEditor:
             "H: Toggle help overlay",
             "",
             "MOUSE CONTROLS:",
-            "Left click + drag: Rotate in view mode",
-            "Left click + drag: Draw lasso in lasso mode",
+            "Left-click + drag: Rotate in view mode",
+            "Left-click + drag: Draw lasso in lasso mode",
+            "Right-click + drag: Move vertices in edit mode (when enabled)",
             "Mouse wheel: Zoom in/out",
             "",
             "HAND GESTURES:",
             "Pinch index finger and thumb: Grab and move selected vertices",
             "",
-            "Press any key to close help"
+            "Press any key or click anywhere to close help"
         ]
         
         # Calculate text block dimensions
         text_height = len(help_commands) * 25
-        text_width = 400
+        text_width = 450
         start_x = (w - text_width) // 2
         start_y = (h - text_height) // 2
         
         # Draw background box
         cv2.rectangle(overlay, 
-                     (start_x - 20, start_y - 20), 
+                     (start_x - 20, start_y - 40), 
                      (start_x + text_width + 20, start_y + text_height + 20), 
                      self.accent_color, -1)
         
         cv2.rectangle(overlay, 
-                     (start_x - 20, start_y - 20), 
+                     (start_x - 20, start_y - 40), 
                      (start_x + text_width + 20, start_y + text_height + 20), 
                      self.highlight_color, 1)
         
         # Draw title
         cv2.putText(overlay, "MESH EDITOR HELP", 
-                   (start_x, start_y - 5), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.active_color, 2)
+                   (start_x, start_y - 15), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, self.active_color, 2)
         
         # Draw commands
         for i, command in enumerate(help_commands):
@@ -511,11 +549,11 @@ class IntegratedMeshEditor:
             if command.endswith(':'):
                 cv2.putText(overlay, command, 
                            (start_x, y_pos), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.active_color, 1)
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.active_color, 1)
             else:
                 cv2.putText(overlay, command, 
                            (start_x, y_pos), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.primary_color, 1)
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.primary_color, 1)
         
         # Blend the overlay
         alpha = 0.85  # Transparency factor
@@ -558,7 +596,7 @@ class IntegratedMeshEditor:
     def draw_hand_landmarks(self, frame, hand_landmarks, results=None):
         """Draw hand landmarks on the frame using MediaPipe."""
         # Only show hand landmarks in edit mode and only for the active hand
-        if self.mode == "edit" and hand_landmarks:
+        if self.mode == "edit" and not self.use_mouse_for_edit and hand_landmarks:
             # Detect if this is the active hand
             is_right = self.detect_right_hand(hand_landmarks, results)
             is_active = (is_right and self.active_hand == "right") or (not is_right and self.active_hand == "left")
@@ -613,12 +651,12 @@ class IntegratedMeshEditor:
                 mid_x = (thumb_pos[0] + index_pos[0]) // 2
                 mid_y = (thumb_pos[1] + index_pos[1]) // 2
                 cv2.circle(frame, (mid_x, mid_y), 5, color, -1)
-
     
     def mouse_callback(self, event, x, y, flags, param):
-        """Handle mouse events."""
-        # Skip all events if help is showing except for key press to close it
-        if self.show_help:
+        """Handle mouse events with consistent orbit controls across all view orientations."""
+        # If help is showing, clicking anywhere closes it
+        if self.show_help and event == cv2.EVENT_LBUTTONDOWN:
+            self.show_help = False
             return
             
         # Check for menu clicks
@@ -653,7 +691,7 @@ class IntegratedMeshEditor:
                 for item in self.top_menu:
                     if (item["x"] <= x <= item["x"] + item["width"]):
                         if "action" in item:
-                            # Direct action
+                            # Direct action item - execute immediately
                             method = getattr(self, item["action"], None)
                             if method:
                                 method()
@@ -672,13 +710,21 @@ class IntegratedMeshEditor:
                 self.last_position = (x, y)
                 self.is_dragging = True
         
+        # Right mouse button - for mesh editing when enabled
+        elif event == cv2.EVENT_RBUTTONDOWN:
+            # Only use right-click for editing when option is enabled
+            if self.mode == "edit" and self.use_mouse_for_edit and y > self.menu_height:
+                self.is_right_dragging = True
+                self.initial_mouse_edit_pos = (x, y)
+                self.last_position = (x, y)
+        
         # Continue lasso selection if in lasso mode with improved smoothing
         elif event == cv2.EVENT_MOUSEMOVE:
             if self.mode == "lasso" and len(self.lasso_points) > 0 and y > self.menu_height:
                 # Check if the new point is close to the start point
                 if self.lasso_start_point and len(self.lasso_points) > 3:
                     dist_to_start = np.sqrt((x - self.lasso_start_point[0])**2 + 
-                                           (y - self.lasso_start_point[1])**2)
+                                          (y - self.lasso_start_point[1])**2)
                     
                     # Auto-close the lasso if we get close to the start point
                     if dist_to_start < self.lasso_auto_close_threshold:
@@ -733,24 +779,73 @@ class IntegratedMeshEditor:
                         # Just add the point directly for small movements
                         self.lasso_points.append((x, y))
             
-            # Rotate mesh if dragging in view mode
+            # Rotate mesh if dragging in view mode - CONSISTENT VIEW-RELATIVE ORBIT CONTROLS
             if self.mode == "view" and self.is_dragging and self.last_position and y > self.menu_height:
                 # Get mouse movement delta
                 dx = x - self.last_position[0]
                 dy = y - self.last_position[1]
                 
-                # Convert to rotation angles (negative dx for natural rotation direction)
-                # When moving mouse to the right, object should rotate to the right
-                # When moving mouse up, object should rotate upward
-                delta_yaw = -dx * self.rotation_sensitivity
-                delta_pitch = -dy * self.rotation_sensitivity
+                # Use screen space orbit controls that are view-dependent
+                # Scale by sensitivity and apply rotation
+                rot_x = dy * self.rotation_sensitivity  # Rotation around right vector (x-axis)
+                rot_y = dx * self.rotation_sensitivity  # Rotation around up vector (y-axis)
                 
-                # Update rotation angles
-                self.rotation[1] += delta_yaw
-                self.rotation[0] += delta_pitch
+                # Apply view-relative rotations
+                self.view_control.rotate(rot_y, rot_x)
                 
-                # Apply the rotation to the view
-                self.update_view_from_rotation()
+                # Update last position
+                self.last_position = (x, y)
+                
+            # Mouse-based editing with right-click drag
+            if self.mode == "edit" and self.use_mouse_for_edit and self.is_right_dragging and self.last_position and y > self.menu_height:
+                # Move selected vertices based on mouse movement
+                if len(self.selected_vertices) > 0:
+                    # Get mouse movement delta
+                    dx = x - self.last_position[0]
+                    dy = y - self.last_position[1]
+                    
+                    # Apply scaling factor for more responsive movement
+                    movement_scale = 0.01  # Scale for mouse movement
+                    
+                    # Get current view parameters
+                    param = self.view_control.convert_to_pinhole_camera_parameters()
+                    extrinsic = np.array(param.extrinsic)
+                    
+                    # Get the camera's view vectors - directly from the camera matrix
+                    right_dir = extrinsic[:3, 0]  # Camera's X axis (right direction)
+                    up_dir = extrinsic[:3, 1]     # Camera's Y axis (up direction)
+                    
+                    # Create a screen-aligned movement vector that's consistent with view orientation
+                    screen_movement = np.array([dx, dy, 0]) * movement_scale
+                    
+                    # Transform screen movement to world space
+                    world_movement = np.zeros(3)
+                    # Right/left movement corresponds to camera's right vector
+                    world_movement += right_dir * screen_movement[0]
+                    # Up/down movement corresponds to camera's up vector
+                    world_movement -= up_dir * screen_movement[1]  # Negative for screen-space mapping
+                    
+                    # Scale by sensitivity factor
+                    movement = world_movement * self.movement_sensitivity * 10  # Increased for mouse
+                    
+                    # Apply movement to selected vertices
+                    vertices = np.asarray(self.mesh.vertices)
+                    before_positions = {idx: vertices[idx].copy() for idx in self.selected_vertices}
+                    
+                    for idx in self.selected_vertices:
+                        vertices[idx] += movement
+                    
+                    # Save positions for undo history
+                    after_positions = {idx: vertices[idx].copy() for idx in self.selected_vertices}
+                    self.vertex_movement_history.append((before_positions, after_positions))
+                    
+                    # Update mesh
+                    self.mesh.vertices = o3d.utility.Vector3dVector(vertices)
+                    self.mesh.compute_vertex_normals()
+                    self.mesh_modified = True
+                    
+                    # Update visualization
+                    self.update_mesh_visualization()
                 
                 # Update last position
                 self.last_position = (x, y)
@@ -778,40 +873,31 @@ class IntegratedMeshEditor:
             
             self.is_dragging = False
             self.last_position = None
+            
+        # End right-button dragging
+        elif event == cv2.EVENT_RBUTTONUP:
+            self.is_right_dragging = False
+            self.last_position = None
         
         # Zoom with mouse wheel - Fix for different platforms
         elif event == cv2.EVENT_MOUSEWHEEL:
             # For Windows
             delta = np.sign(flags >> 16)  # Extract vertical wheel motion
-            self.zoom += delta * self.zoom_sensitivity
-            self.zoom = max(0.1, min(2.0, self.zoom))
-            self.view_control.set_zoom(self.zoom)
+            self.zoom_factor = 1.0 + self.zoom_sensitivity
+            if delta > 0:
+                self.view_control.scale(self.zoom_factor)
+            else:
+                self.view_control.scale(1.0 / self.zoom_factor)
             self.update_mesh_visualization()
         elif event == cv2.EVENT_MOUSEHWHEEL:  
             # For macOS
             delta = -np.sign(flags)  # Different direction on macOS
-            self.zoom += delta * self.zoom_sensitivity
-            self.zoom = max(0.1, min(2.0, self.zoom))
-            self.view_control.set_zoom(self.zoom)
+            self.zoom_factor = 1.0 + self.zoom_sensitivity
+            if delta > 0:
+                self.view_control.scale(self.zoom_factor)
+            else:
+                self.view_control.scale(1.0 / self.zoom_factor)
             self.update_mesh_visualization()
-    
-    def update_view_from_rotation(self):
-        """Update the view based on current rotation angles."""
-        # Convert Euler angles to direction vector
-        pitch, yaw, _ = [math.radians(angle) for angle in self.rotation]
-        
-        # Calculate front direction vector - natural orbit control
-        # When yaw increases, we rotate rightward around the object
-        # When pitch increases, we rotate upward around the object
-        x = math.sin(yaw) * math.cos(pitch)
-        y = math.sin(pitch)
-        z = math.cos(yaw) * math.cos(pitch)
-        
-        # Update view
-        self.view_control.set_front([x, y, z])
-        
-        # Update visualization
-        self.update_mesh_visualization()
     
     def process_lasso_selection(self):
         """Process the lasso selection to select vertices."""
@@ -892,8 +978,9 @@ class IntegratedMeshEditor:
         return [x, y]
     
     def process_hand_gesture(self, hand_landmarks, frame, results=None):
-        """Process hand gestures for mesh editing."""
-        if self.mode != "edit" or not hand_landmarks:
+        """Process hand gestures for mesh editing with view-relative movement."""
+        # Skip hand processing if mouse editing is enabled
+        if self.mode != "edit" or self.use_mouse_for_edit or not hand_landmarks:
             return
             
         # Check if this is the active hand we want to use
@@ -945,20 +1032,19 @@ class IntegratedMeshEditor:
             param = self.view_control.convert_to_pinhole_camera_parameters()
             extrinsic = np.array(param.extrinsic)
             
-            # Get the camera's view vectors
-            front_dir = extrinsic[:3, 2]  # Camera's Z axis (looking direction)
+            # Get the camera's view vectors - directly from the camera matrix
             right_dir = extrinsic[:3, 0]  # Camera's X axis (right direction)
             up_dir = extrinsic[:3, 1]     # Camera's Y axis (up direction)
             
-            # Create a corrected screen-aligned movement vector
+            # Create a screen-aligned movement vector that's consistent with view orientation
             screen_movement = np.array([delta_x, delta_y, 0]) * movement_scale
             
             # Transform screen movement to world space
             world_movement = np.zeros(3)
             # Right/left movement corresponds to camera's right vector
             world_movement += right_dir * screen_movement[0]
-            # Up/down movement corresponds to camera's up vector (note: we keep delta_y positive for correct movement)
-            world_movement -= up_dir * screen_movement[1]  # Negative to fix the inverted controls
+            # Up/down movement corresponds to camera's up vector
+            world_movement -= up_dir * screen_movement[1]  # Negative for correct screen-space mapping
             
             # Scale by sensitivity factor
             movement = world_movement * self.movement_sensitivity
@@ -1006,8 +1092,8 @@ class IntegratedMeshEditor:
         print("  +/-: Zoom in/out")
         print("  Mouse wheel: Zoom in/out")
         print("  h: Toggle help overlay")
-        print("  Left mouse button: Rotate in view mode, draw lasso in lasso mode")
-        print("  NOTE: Modern interface with improved lasso tool and natural orbit controls")
+        print("  Input Method: Mouse (right-click drag) or Hand tracking")
+        print("  NOTE: Menu bar includes options for all functions")
         
         while self.running:
             try:
@@ -1043,8 +1129,8 @@ class IntegratedMeshEditor:
                 frame = cv2.resize(frame, (mesh_img.shape[1], mesh_img.shape[0]))
                 
                 # Create a blended view if in edit mode, otherwise show mesh
-                if self.mode == "edit":
-                    # Blend mesh image with webcam frame
+                if self.mode == "edit" and not self.use_mouse_for_edit:
+                    # Blend mesh image with webcam frame for hand tracking
                     alpha = 0.7  # Mesh visibility
                     beta = 0.3   # Webcam visibility
                     blended_img = cv2.addWeighted(mesh_img, alpha, frame, beta, 0)
@@ -1052,8 +1138,8 @@ class IntegratedMeshEditor:
                 else:
                     display_img = mesh_img.copy()
                 
-                # Process and draw hand landmarks
-                if results.multi_hand_landmarks:
+                # Process and draw hand landmarks - only when hand editing is enabled
+                if not self.use_mouse_for_edit and results.multi_hand_landmarks:
                     for hand_landmarks in results.multi_hand_landmarks:
                         self.hand_landmarks = hand_landmarks
                         self.draw_hand_landmarks(display_img, hand_landmarks, results)
@@ -1099,6 +1185,9 @@ class IntegratedMeshEditor:
                     self.set_side_view()
                 elif key == ord('h'):
                     self.toggle_help()
+                elif key == ord('m'):
+                    # Quick toggle for mouse/hand editing
+                    self.toggle_edit_input()
                 elif key == ord('z') and self.vertex_movement_history:
                     # Undo last movement
                     before_positions, _ = self.vertex_movement_history.pop()
@@ -1109,14 +1198,10 @@ class IntegratedMeshEditor:
                     self.mesh.compute_vertex_normals()
                     self.update_mesh_visualization()
                 elif key == ord('+') or key == ord('='):  # Plus key
-                    self.zoom += self.zoom_sensitivity
-                    self.zoom = min(2.0, self.zoom)
-                    self.view_control.set_zoom(self.zoom)
+                    self.view_control.scale(1.1)  # Zoom in
                     self.update_mesh_visualization()
                 elif key == ord('-') or key == ord('_'):  # Minus key
-                    self.zoom -= self.zoom_sensitivity
-                    self.zoom = max(0.1, self.zoom)
-                    self.view_control.set_zoom(self.zoom)
+                    self.view_control.scale(0.9)  # Zoom out
                     self.update_mesh_visualization()
                 # Close help overlay on any key press if it's open
                 elif self.show_help:
