@@ -16,24 +16,34 @@ class IntegratedMeshEditor:
         self.lasso_points = []
         self.lasso_start_point = None  # Track the starting point for auto-closing
         self.lasso_auto_close_threshold = 15  # Distance in pixels to auto-close the lasso
+        self.lasso_smoothing_factor = 2  # Points to skip for smoothing (higher = smoother)
+        self.lasso_min_distance = 3  # Minimum distance between points (lower = more detail)
         self.selected_vertices = []
         self.hand_landmarks = None
         self.running = True
         self.mesh_modified = False
-        self.is_pinching = False  # Add is_pinching attribute
-        self.initial_pinch_pos = None  # Track initial pinch position
-        self.active_hand = "right"  # Can be "right" or "left" - determines which hand controls the mesh
+        self.is_pinching = False
+        self.initial_pinch_pos = None
+        self.active_hand = "right"  # Can be "right" or "left"
+        self.show_help = False  # Toggle help overlay
         
-        # Add colors for different parts
+        # Modern UI colors
+        self.bg_color = (20, 20, 20)  # Dark background
+        self.primary_color = (240, 240, 240)  # White text/UI elements
+        self.accent_color = (70, 70, 70)  # Dark gray for buttons
+        self.highlight_color = (200, 200, 200)  # Light gray for highlights
+        self.active_color = (240, 240, 240)  # White for active buttons
+        
+        # Mesh colors
         self.vertex_color = [0.3, 0.7, 1.0]  # Blue for vertices
-        self.selected_vertex_color = [1.0, 0.0, 0.0]  # Red for selected vertices
-        self.face_color = [0.7, 0.7, 0.7]  # Light gray for faces
-        self.edge_color = [0.0, 0.0, 0.0]  # Black for edges
+        self.selected_vertex_color = [1.0, 0.3, 0.3]  # Red for selected vertices
+        self.face_color = [0.85, 0.85, 0.85]  # Light gray for faces
+        self.edge_color = [0.2, 0.2, 0.2]  # Dark gray for edges
         
         # Sensitivity settings
-        self.rotation_sensitivity = 0.2  # Reduced for finer control
-        self.zoom_sensitivity = 0.03  # Reduced for finer control
-        self.movement_sensitivity = 0.15  # Increased for faster response
+        self.rotation_sensitivity = 0.2
+        self.zoom_sensitivity = 0.03
+        self.movement_sensitivity = 0.15
         
         # Initialize MediaPipe hands
         print("Initializing MediaPipe...")
@@ -43,7 +53,7 @@ class IntegratedMeshEditor:
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=2,
-            min_detection_confidence=0.5,  # Reduced for better performance
+            min_detection_confidence=0.5,
             min_tracking_confidence=0.5
         )
         
@@ -53,7 +63,7 @@ class IntegratedMeshEditor:
         self.mesh = o3d.io.read_triangle_mesh(mesh_path)
         if not self.mesh.has_vertex_normals():
             self.mesh.compute_vertex_normals()
-        self.mesh.paint_uniform_color([0.7, 0.7, 0.7])
+        self.mesh.paint_uniform_color([0.85, 0.85, 0.85])  # Light gray
         self.mesh.translate(-self.mesh.get_center())
         
         # First, try to remove the purple sphere
@@ -69,16 +79,16 @@ class IntegratedMeshEditor:
             print("Warning: Could not open webcam!")
         
         # Create the integrated interface window
-        cv2.namedWindow("Integrated Mesh Editor", cv2.WINDOW_NORMAL)
-        cv2.resizeWindow("Integrated Mesh Editor", 1280, 720)
-        cv2.setMouseCallback("Integrated Mesh Editor", self.mouse_callback)
+        cv2.namedWindow("Mesh Editor", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("Mesh Editor", 1280, 720)
+        cv2.setMouseCallback("Mesh Editor", self.mouse_callback)
         
         # Initialize Open3D offscreen renderer for mesh visualization
         print("Setting up Open3D renderer...")
         self.setup_renderer()
         
-        # Create control buttons
-        self.setup_ui_controls()
+        # Create modern UI menus
+        self.setup_modern_ui()
         
         # Last mouse position
         self.last_position = None
@@ -125,7 +135,7 @@ class IntegratedMeshEditor:
                     new_mesh = o3d.geometry.TriangleMesh()
                     new_mesh.vertices = o3d.utility.Vector3dVector(vertices)
                     new_mesh.triangles = o3d.utility.Vector3iVector(new_triangles)
-                    new_mesh.paint_uniform_color([0.7, 0.7, 0.7])
+                    new_mesh.paint_uniform_color(self.face_color)
                     new_mesh.compute_vertex_normals()
                     self.mesh = new_mesh
                     print("Central geometry removed from mesh")
@@ -149,9 +159,9 @@ class IntegratedMeshEditor:
         
         # Set rendering options to make vertices and faces distinct
         render_option = self.vis.get_render_option()
-        render_option.point_size = 8.0  # Even larger vertices
-        render_option.line_width = 2.0  # Thicker lines for edges
-        render_option.background_color = [0.2, 0.2, 0.2]  # Dark background
+        render_option.point_size = 6.0  # Vertices size
+        render_option.line_width = 1.5  # Edge thickness
+        render_option.background_color = [0.1, 0.1, 0.1]  # Dark background
         render_option.light_on = True
         
         # Try to set advanced rendering options, with fallbacks for older versions
@@ -186,47 +196,46 @@ class IntegratedMeshEditor:
         self.view_control = self.vis.get_view_control()
         self.view_control.set_zoom(0.8)
         self.set_front_view()
-    
-    def setup_ui_controls(self):
-        """Create UI controls for the integrated interface."""
-        self.button_height = 40
-        self.button_margin = 10
-        self.button_width = 150
+
+    def setup_modern_ui(self):
+        """Create modern UI layout with dropdown menu style."""
+        # Top menu bar height and options
+        self.menu_height = 40
+        self.menu_padding = 15
+        self.dropdown_width = 200
+        self.dropdown_item_height = 36
         
-        # Define buttons: [name, color, x, y, width, height]
-        self.buttons = [
-            {"name": "View Mode", "color": (0, 128, 255), "x": 10, "y": 10, 
-             "width": self.button_width, "height": self.button_height, "active": True},
-            
-            {"name": "Lasso Select", "color": (0, 255, 0), "x": 10 + self.button_width + self.button_margin, "y": 10, 
-             "width": self.button_width, "height": self.button_height, "active": False},
-            
-            {"name": "Edit Mode", "color": (255, 0, 0), "x": 10 + 2 * (self.button_width + self.button_margin), "y": 10, 
-             "width": self.button_width, "height": self.button_height, "active": False},
-            
-            {"name": "Reset Mesh", "color": (128, 128, 128), "x": 10 + 3 * (self.button_width + self.button_margin), "y": 10, 
-             "width": self.button_width, "height": self.button_height, "active": False},
-            
-            {"name": "Front View", "color": (50, 50, 200), "x": 10, "y": 10 + self.button_height + self.button_margin, 
-             "width": self.button_width, "height": self.button_height, "active": False},
-            
-            {"name": "Top View", "color": (50, 50, 200), "x": 10 + self.button_width + self.button_margin, 
-             "y": 10 + self.button_height + self.button_margin, 
-             "width": self.button_width, "height": self.button_height, "active": False},
-            
-            {"name": "Side View", "color": (50, 50, 200), "x": 10 + 2 * (self.button_width + self.button_margin), 
-             "y": 10 + self.button_height + self.button_margin, 
-             "width": self.button_width, "height": self.button_height, "active": False},
-            
-            {"name": "Save Mesh", "color": (0, 200, 0), "x": 10 + 3 * (self.button_width + self.button_margin), 
-             "y": 10 + self.button_height + self.button_margin, 
-             "width": self.button_width, "height": self.button_height, "active": False},
-             
-            # Add hand selector button
-            {"name": "Use RIGHT Hand", "color": (255, 153, 51), "x": 10, 
-             "y": 10 + 2 * (self.button_height + self.button_margin), 
-             "width": self.button_width, "height": self.button_height, "active": False}
+        # Define the top menu items
+        self.top_menu = [
+            {"name": "Mode", "x": 10, "width": 100, "active": False, "dropdown": [
+                {"name": "View", "action": "set_view_mode"},
+                {"name": "Lasso Select", "action": "set_lasso_mode"},
+                {"name": "Edit", "action": "set_edit_mode"}
+            ]},
+            {"name": "View", "x": 120, "width": 100, "active": False, "dropdown": [
+                {"name": "Front", "action": "set_front_view"},
+                {"name": "Top", "action": "set_top_view"},
+                {"name": "Side", "action": "set_side_view"}
+            ]},
+            {"name": "Mesh", "x": 230, "width": 100, "active": False, "dropdown": [
+                {"name": "Reset", "action": "reset_mesh"},
+                {"name": "Save", "action": "save_mesh"}
+            ]},
+            {"name": "Hand", "x": 340, "width": 100, "active": False, "dropdown": [
+                {"name": "Use Right Hand", "action": "toggle_hand"},
+                {"name": "Use Left Hand", "action": "toggle_hand"}
+            ]},
+            {"name": "Help", "x": 450, "width": 100, "active": False, "action": "toggle_help"}
         ]
+        
+        # Calculate positions for each menu item
+        total_width = 0
+        for item in self.top_menu:
+            item["x"] = 10 + total_width
+            total_width += item["width"] + 10
+        
+        # Track open dropdown
+        self.open_dropdown = None
     
     def set_front_view(self):
         """Set front view for the mesh."""
@@ -251,6 +260,37 @@ class IntegratedMeshEditor:
         self.view_control.set_up([0, 1, 0])      # Y is up
         self.rotation = [0, 90, 0]
         self.update_mesh_visualization()
+    
+    def set_view_mode(self):
+        """Set the application to view mode."""
+        self.mode = "view"
+        self.lasso_points = []
+        self.lasso_start_point = None
+        
+    def set_lasso_mode(self):
+        """Set the application to lasso select mode."""
+        self.mode = "lasso"
+        self.lasso_points = []
+        self.lasso_start_point = None
+        
+    def set_edit_mode(self):
+        """Set the application to edit mode."""
+        self.mode = "edit"
+        self.lasso_points = []
+        self.lasso_start_point = None
+        
+    def toggle_hand(self):
+        """Toggle between right and left hand for control."""
+        if self.active_hand == "right":
+            self.active_hand = "left"
+            print("Switched to LEFT hand control")
+        else:
+            self.active_hand = "right"
+            print("Switched to RIGHT hand control")
+            
+    def toggle_help(self):
+        """Toggle help display."""
+        self.show_help = not self.show_help
     
     def reset_mesh(self):
         """Reset mesh to original state."""
@@ -277,17 +317,16 @@ class IntegratedMeshEditor:
     
     def update_mesh_visualization(self):
         """Update the mesh visualization."""
-        # Optimize: Only update what's needed for performance
         try:
             # Highlight selected vertices
             vertex_colors = np.asarray(self.mesh.vertex_colors)
             if len(vertex_colors) == 0:
-                vertex_colors = np.ones((len(self.mesh.vertices), 3)) * self.vertex_color
+                vertex_colors = np.ones((len(self.mesh.vertices), 3)) * self.face_color
             
-            # Reset all vertices to default blue-ish color
-            vertex_colors[:] = self.vertex_color
+            # Reset all vertices to default color
+            vertex_colors[:] = self.face_color
             
-            # Highlight selected vertices in red
+            # Highlight selected vertices
             for idx in self.selected_vertices:
                 if 0 <= idx < len(vertex_colors):
                     vertex_colors[idx] = self.selected_vertex_color
@@ -307,49 +346,88 @@ class IntegratedMeshEditor:
         self.is_pinching = False
         self.initial_pinch_pos = None
     
-    def draw_ui(self, frame):
-        """Draw the UI elements on the frame."""
-        # Draw mode indicator background
-        cv2.rectangle(frame, (0, 0), (frame.shape[1], 100), (40, 40, 40), -1)
+    def draw_modern_ui(self, frame):
+        """Draw the modern UI elements on the frame."""
+        h, w = frame.shape[:2]
         
-        # Update hand selector button text
-        for button in self.buttons:
-            if "Hand" in button["name"]:
-                button["name"] = f"Use {self.active_hand.upper()} Hand"
+        # Draw top menu bar background
+        cv2.rectangle(frame, (0, 0), (w, self.menu_height), self.bg_color, -1)
         
-        # Draw buttons
-        for button in self.buttons:
-            color = (button["color"][0] + 50, button["color"][1] + 50, button["color"][2] + 50) if button["active"] else button["color"]
-            cv2.rectangle(frame, 
-                         (button["x"], button["y"]), 
-                         (button["x"] + button["width"], button["y"] + button["height"]), 
-                         color, -1)
+        # Draw mode indicator and status info
+        status_text = f"Mode: {self.mode.upper()} | Selected: {len(self.selected_vertices)}"
+        status_x = w - 10 - cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0][0]
+        cv2.putText(frame, status_text, (status_x, 27), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.primary_color, 1)
+        
+        # Draw top menu items
+        for item in self.top_menu:
+            # Determine if this item has the open dropdown
+            is_open = self.open_dropdown == item["name"] if self.open_dropdown else False
             
-            cv2.rectangle(frame, 
-                         (button["x"], button["y"]), 
-                         (button["x"] + button["width"], button["y"] + button["height"]), 
-                         (255, 255, 255), 1)
+            # Draw menu item
+            menu_color = self.active_color if is_open else self.primary_color
+            cv2.putText(frame, item["name"], (item["x"] + 10, 27), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, menu_color, 1)
             
-            text_size = cv2.getTextSize(button["name"], cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
-            text_x = button["x"] + (button["width"] - text_size[0]) // 2
-            text_y = button["y"] + (button["height"] + text_size[1]) // 2
+            # Draw dropdown triangle indicator
+            if "dropdown" in item:
+                triangle_pts = np.array([
+                    [item["x"] + item["width"] - 15, 17], 
+                    [item["x"] + item["width"] - 5, 17], 
+                    [item["x"] + item["width"] - 10, 25]
+                ], np.int32)
+                cv2.fillPoly(frame, [triangle_pts], menu_color)
             
-            cv2.putText(frame, button["name"], (text_x, text_y), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        
-        # Draw current mode and stats
-        cv2.putText(frame, f"Mode: {self.mode.upper()}", (10, 80), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-        
-        cv2.putText(frame, f"Selected vertices: {len(self.selected_vertices)}", (250, 80), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+            # Draw dropdown if open
+            if is_open and "dropdown" in item:
+                # Dropdown background
+                dropdown_height = len(item["dropdown"]) * self.dropdown_item_height
+                dropdown_y = self.menu_height
+                dropdown_x = item["x"]
+                
+                cv2.rectangle(frame, 
+                             (dropdown_x, dropdown_y), 
+                             (dropdown_x + self.dropdown_width, dropdown_y + dropdown_height), 
+                             self.accent_color, -1)
+                
+                # Dropdown border
+                cv2.rectangle(frame, 
+                             (dropdown_x, dropdown_y), 
+                             (dropdown_x + self.dropdown_width, dropdown_y + dropdown_height), 
+                             self.highlight_color, 1)
+                
+                # Dropdown items
+                for i, option in enumerate(item["dropdown"]):
+                    option_y = dropdown_y + i * self.dropdown_item_height
+                    
+                    # Highlight item for active mode or hand
+                    highlighted = False
+                    if item["name"] == "Mode" and option["name"].lower().replace(" ", "_") == self.mode:
+                        highlighted = True
+                    elif item["name"] == "Hand" and (
+                        (option["name"].lower().find("right") >= 0 and self.active_hand == "right") or
+                        (option["name"].lower().find("left") >= 0 and self.active_hand == "left")):
+                        highlighted = True
+                        
+                    # Draw item background if highlighted
+                    if highlighted:
+                        cv2.rectangle(frame, 
+                                     (dropdown_x, option_y), 
+                                     (dropdown_x + self.dropdown_width, option_y + self.dropdown_item_height), 
+                                     self.highlight_color, -1)
+                    
+                    # Draw item text
+                    option_color = self.active_color if highlighted else self.primary_color
+                    cv2.putText(frame, option["name"], 
+                               (dropdown_x + 10, option_y + 25), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, option_color, 1)
         
         # Draw lasso if in lasso mode
         if self.mode == "lasso" and len(self.lasso_points) > 1:
             # Draw the current lasso points
             pts = np.array(self.lasso_points, np.int32)
             pts = pts.reshape((-1, 1, 2))
-            cv2.polylines(frame, [pts], False, (0, 255, 0), 2)
+            cv2.polylines(frame, [pts], False, (0, 255, 200), 1)
             
             # Draw a line from the last point to the first point if close enough
             if self.lasso_start_point and len(self.lasso_points) > 3:
@@ -362,7 +440,86 @@ class IntegratedMeshEditor:
                     cv2.line(frame, 
                              last_point, 
                              self.lasso_start_point, 
-                             (0, 200, 200), 1)
+                             (0, 255, 255), 1)
+        
+        # Draw help overlay if enabled
+        if self.show_help:
+            self.draw_help_overlay(frame)
+
+    def draw_help_overlay(self, frame):
+        """Draw the help overlay with keyboard shortcuts."""
+        h, w = frame.shape[:2]
+        
+        # Semi-transparent overlay
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 0), -1)
+        
+        # Add help text
+        help_commands = [
+            "KEYBOARD CONTROLS:",
+            "ESC: Exit application",
+            "V: View mode",
+            "L: Lasso select mode",
+            "E: Edit mode (toggle between Lasso/Edit)",
+            "F: Front view",
+            "T: Top view",
+            "D: Side view",
+            "R: Reset mesh",
+            "S: Save mesh",
+            "Z: Undo last movement",
+            "+/-: Zoom in/out",
+            "H: Toggle help overlay",
+            "",
+            "MOUSE CONTROLS:",
+            "Left click + drag: Rotate in view mode",
+            "Left click + drag: Draw lasso in lasso mode",
+            "Mouse wheel: Zoom in/out",
+            "",
+            "HAND GESTURES:",
+            "Pinch index finger and thumb: Grab and move selected vertices",
+            "",
+            "Press any key to close help"
+        ]
+        
+        # Calculate text block dimensions
+        text_height = len(help_commands) * 25
+        text_width = 400
+        start_x = (w - text_width) // 2
+        start_y = (h - text_height) // 2
+        
+        # Draw background box
+        cv2.rectangle(overlay, 
+                     (start_x - 20, start_y - 20), 
+                     (start_x + text_width + 20, start_y + text_height + 20), 
+                     self.accent_color, -1)
+        
+        cv2.rectangle(overlay, 
+                     (start_x - 20, start_y - 20), 
+                     (start_x + text_width + 20, start_y + text_height + 20), 
+                     self.highlight_color, 1)
+        
+        # Draw title
+        cv2.putText(overlay, "MESH EDITOR HELP", 
+                   (start_x, start_y - 5), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.active_color, 2)
+        
+        # Draw commands
+        for i, command in enumerate(help_commands):
+            y_pos = start_y + 25 * i + 25
+            
+            # Highlight titles
+            if command.endswith(':'):
+                cv2.putText(overlay, command, 
+                           (start_x, y_pos), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.active_color, 1)
+            else:
+                cv2.putText(overlay, command, 
+                           (start_x, y_pos), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.primary_color, 1)
+        
+        # Blend the overlay
+        alpha = 0.85  # Transparency factor
+        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
     
     def detect_right_hand(self, hand_landmarks, results=None):
         """Detect if the hand is a right hand."""
@@ -408,13 +565,28 @@ class IntegratedMeshEditor:
             
             # Only draw landmarks for the active hand
             if is_active:
-                # Draw hand landmarks
+                # FIX: Create proper drawing specs instead of custom styles dictionary
+                landmark_drawing_spec = self.mp_drawing_styles.get_default_hand_landmarks_style()
+                # Override default colors to match our UI
+                for i in range(21):  # MediaPipe has 21 hand landmarks
+                    landmark_drawing_spec[i].color = self.primary_color
+                    landmark_drawing_spec[i].thickness = 1
+                    landmark_drawing_spec[i].circle_radius = 2
+                
+                # Same for connections
+                connection_drawing_spec = self.mp_drawing_styles.get_default_hand_connections_style()
+                for connection in self.mp_hands.HAND_CONNECTIONS:
+                    # Each connection is a tuple of two indices
+                    connection_drawing_spec[connection].color = self.primary_color
+                    connection_drawing_spec[connection].thickness = 1
+                
+                # Draw hand landmarks with properly configured styles
                 self.mp_drawing.draw_landmarks(
                     frame,
                     hand_landmarks,
                     self.mp_hands.HAND_CONNECTIONS,
-                    self.mp_drawing_styles.get_default_hand_landmarks_style(),
-                    self.mp_drawing_styles.get_default_hand_connections_style()
+                    landmark_drawing_spec,
+                    connection_drawing_spec
                 )
                 
                 # Draw pinch visualization
@@ -431,8 +603,8 @@ class IntegratedMeshEditor:
                     (thumb_tip.y - index_tip.y) ** 2
                 )
                 
-                # Set color based on pinch
-                color = (0, 0, 255) if distance < 0.08 else (0, 255, 0)
+                # Set color based on pinch - convert from BGR to tuple for OpenCV
+                color = (0, 200, 255) if distance < 0.08 else (0, 255, 200)
                 
                 # Draw line between index and thumb
                 cv2.line(frame, thumb_pos, index_pos, color, 2)
@@ -441,30 +613,68 @@ class IntegratedMeshEditor:
                 mid_x = (thumb_pos[0] + index_pos[0]) // 2
                 mid_y = (thumb_pos[1] + index_pos[1]) // 2
                 cv2.circle(frame, (mid_x, mid_y), 5, color, -1)
+
     
     def mouse_callback(self, event, x, y, flags, param):
         """Handle mouse events."""
-        # Check if clicking on any button
+        # Skip all events if help is showing except for key press to close it
+        if self.show_help:
+            return
+            
+        # Check for menu clicks
         if event == cv2.EVENT_LBUTTONDOWN:
-            for button in self.buttons:
-                if (button["x"] <= x <= button["x"] + button["width"] and 
-                    button["y"] <= y <= button["y"] + button["height"]):
-                    self.handle_button_click(button["name"])
-                    return
+            # If a dropdown is open, check for clicks on its items
+            if self.open_dropdown:
+                for item in self.top_menu:
+                    if item["name"] == self.open_dropdown and "dropdown" in item:
+                        dropdown_x = item["x"]
+                        dropdown_y = self.menu_height
+                        dropdown_w = self.dropdown_width
+                        
+                        # Check if click is within dropdown area
+                        if (dropdown_x <= x <= dropdown_x + dropdown_w):
+                            for i, option in enumerate(item["dropdown"]):
+                                option_y = dropdown_y + i * self.dropdown_item_height
+                                if (option_y <= y <= option_y + self.dropdown_item_height):
+                                    # Execute menu action
+                                    if "action" in option:
+                                        method = getattr(self, option["action"], None)
+                                        if method:
+                                            method()
+                                    self.open_dropdown = None
+                                    return
+                
+                # If clicked outside dropdown, close it
+                self.open_dropdown = None
+                return
+            
+            # Check for clicks on top menu items
+            if y <= self.menu_height:
+                for item in self.top_menu:
+                    if (item["x"] <= x <= item["x"] + item["width"]):
+                        if "action" in item:
+                            # Direct action
+                            method = getattr(self, item["action"], None)
+                            if method:
+                                method()
+                        elif "dropdown" in item:
+                            # Open dropdown
+                            self.open_dropdown = item["name"]
+                        return
             
             # Start lasso selection if in lasso mode
-            if self.mode == "lasso":
+            if self.mode == "lasso" and y > self.menu_height:
                 self.lasso_points = [(x, y)]
                 self.lasso_start_point = (x, y)  # Store start point
             
             # Start rotation if in view mode
-            if self.mode == "view":
+            if self.mode == "view" and y > self.menu_height:
                 self.last_position = (x, y)
                 self.is_dragging = True
         
-        # Continue lasso selection if in lasso mode
+        # Continue lasso selection if in lasso mode with improved smoothing
         elif event == cv2.EVENT_MOUSEMOVE:
-            if self.mode == "lasso" and len(self.lasso_points) > 0:
+            if self.mode == "lasso" and len(self.lasso_points) > 0 and y > self.menu_height:
                 # Check if the new point is close to the start point
                 if self.lasso_start_point and len(self.lasso_points) > 3:
                     dist_to_start = np.sqrt((x - self.lasso_start_point[0])**2 + 
@@ -472,6 +682,18 @@ class IntegratedMeshEditor:
                     
                     # Auto-close the lasso if we get close to the start point
                     if dist_to_start < self.lasso_auto_close_threshold:
+                        # Add intermediate points for a smoother curve
+                        last_point = self.lasso_points[-1]
+                        dx = self.lasso_start_point[0] - last_point[0]
+                        dy = self.lasso_start_point[1] - last_point[1]
+                        steps = 5  # Number of interpolation steps
+                        
+                        for i in range(1, steps):
+                            t = i / steps
+                            interp_x = int(last_point[0] + dx * t)
+                            interp_y = int(last_point[1] + dy * t)
+                            self.lasso_points.append((interp_x, interp_y))
+                            
                         self.lasso_points.append(self.lasso_start_point)  # Close the lasso
                         self.process_lasso_selection()
                         return
@@ -480,12 +702,39 @@ class IntegratedMeshEditor:
                 last_point = self.lasso_points[-1]
                 dist_to_last = np.sqrt((x - last_point[0])**2 + (y - last_point[1])**2)
                 
-                # Only add points that are at least 5 pixels away from the last point
-                if dist_to_last > 5:
-                    self.lasso_points.append((x, y))
+                # Only add points that are at least min_distance away from the last point
+                if dist_to_last > self.lasso_min_distance:
+                    # Apply Bezier-like smoothing by adding intermediate points
+                    # when the distance is large
+                    if dist_to_last > self.lasso_min_distance * 5:
+                        # Add intermediate points
+                        steps = int(dist_to_last / (self.lasso_min_distance * 2))
+                        steps = min(max(steps, 2), 10)  # Limit number of steps
+                        
+                        # Get previous point for curvature
+                        prev_point = self.lasso_points[-2] if len(self.lasso_points) > 1 else last_point
+                        
+                        # Calculate control points for quadratic Bezier curve
+                        # This creates a smoother curve by considering direction of movement
+                        control_x = last_point[0] * 2 - prev_point[0]
+                        control_y = last_point[1] * 2 - prev_point[1]
+                        
+                        for i in range(1, steps):
+                            t = i / steps
+                            # Quadratic Bezier interpolation
+                            bezier_x = int((1-t)**2 * last_point[0] + 
+                                        2*(1-t)*t * control_x + 
+                                        t**2 * x)
+                            bezier_y = int((1-t)**2 * last_point[1] + 
+                                        2*(1-t)*t * control_y + 
+                                        t**2 * y)
+                            self.lasso_points.append((bezier_x, bezier_y))
+                    else:
+                        # Just add the point directly for small movements
+                        self.lasso_points.append((x, y))
             
-            # Rotate mesh if dragging in view mode - COMPLETELY REWRITTEN ORBIT CONTROLS
-            if self.mode == "view" and self.is_dragging and self.last_position:
+            # Rotate mesh if dragging in view mode
+            if self.mode == "view" and self.is_dragging and self.last_position and y > self.menu_height:
                 # Get mouse movement delta
                 dx = x - self.last_position[0]
                 dy = y - self.last_position[1]
@@ -508,9 +757,22 @@ class IntegratedMeshEditor:
         
         # End lasso selection or rotation
         elif event == cv2.EVENT_LBUTTONUP:
-            if self.mode == "lasso" and len(self.lasso_points) > 2:
-                # Add the starting point to close the lasso
+            if self.mode == "lasso" and len(self.lasso_points) > 2 and y > self.menu_height:
+                # Add the starting point to close the lasso with smoothing
                 if self.lasso_start_point:
+                    last_point = self.lasso_points[-1]
+                    dx = self.lasso_start_point[0] - last_point[0]
+                    dy = self.lasso_start_point[1] - last_point[1]
+                    dist_to_start = np.sqrt(dx**2 + dy**2)
+                    
+                    # Add intermediate points for a smoother curve
+                    steps = max(3, min(10, int(dist_to_start / self.lasso_min_distance)))
+                    for i in range(1, steps):
+                        t = i / steps
+                        interp_x = int(last_point[0] + dx * t)
+                        interp_y = int(last_point[1] + dy * t)
+                        self.lasso_points.append((interp_x, interp_y))
+                        
                     self.lasso_points.append(self.lasso_start_point)
                 self.process_lasso_selection()
             
@@ -550,58 +812,6 @@ class IntegratedMeshEditor:
         
         # Update visualization
         self.update_mesh_visualization()
-    
-    def handle_button_click(self, button_name):
-        """Handle button clicks."""
-        print(f"Button clicked: {button_name}")
-        
-        # Update button active states
-        for button in self.buttons:
-            if button["name"] == button_name and button_name in ["View Mode", "Lasso Select", "Edit Mode"]:
-                button["active"] = True
-            elif button["name"] in ["View Mode", "Lasso Select", "Edit Mode"]:
-                button["active"] = False
-        
-        # Handle specific button actions
-        if button_name == "View Mode":
-            self.mode = "view"
-            self.lasso_points = []
-            self.lasso_start_point = None
-        
-        elif button_name == "Lasso Select":
-            self.mode = "lasso"
-            self.lasso_points = []
-            self.lasso_start_point = None
-        
-        elif button_name == "Edit Mode":
-            # Allow switching to edit mode even if no vertices are selected
-            self.mode = "edit"
-            self.lasso_points = []
-            self.lasso_start_point = None
-        
-        elif button_name == "Reset Mesh":
-            self.reset_mesh()
-        
-        elif button_name == "Front View":
-            self.set_front_view()
-        
-        elif button_name == "Top View":
-            self.set_top_view()
-        
-        elif button_name == "Side View":
-            self.set_side_view()
-        
-        elif button_name == "Save Mesh":
-            self.save_mesh()
-            
-        elif "Hand" in button_name:  # Match any button with "Hand" in the name
-            # Toggle between right and left hand
-            if self.active_hand == "right":
-                self.active_hand = "left"
-                print("Switched to LEFT hand control")
-            else:
-                self.active_hand = "right"
-                print("Switched to RIGHT hand control")
     
     def process_lasso_selection(self):
         """Process the lasso selection to select vertices."""
@@ -781,24 +991,23 @@ class IntegratedMeshEditor:
     
     def run(self):
         """Main application loop."""
-        print("Starting integrated mesh editor...")
+        print("Starting modern mesh editor...")
         print("Controls:")
         print("  ESC: Exit")
         print("  r: Reset mesh")
         print("  s: Save mesh")
         print("  v: View mode")
         print("  l: Lasso select mode")
-        print("  e: Edit mode (can toggle between Lasso and Edit with 'e')")
+        print("  e: Edit mode (toggle between Lasso/Edit)")
         print("  f: Front view")
         print("  t: Top view")
         print("  d: Side view")
         print("  z: Undo last movement")
         print("  +/-: Zoom in/out")
         print("  Mouse wheel: Zoom in/out")
+        print("  h: Toggle help overlay")
         print("  Left mouse button: Rotate in view mode, draw lasso in lasso mode")
-        print("  NOTE: Orbit controls have been completely rewritten for natural rotation")
-        print("        - Moving mouse right rotates the mesh right")
-        print("        - Moving mouse up rotates the mesh up")
+        print("  NOTE: Modern interface with improved lasso tool and natural orbit controls")
         
         while self.running:
             try:
@@ -855,13 +1064,13 @@ class IntegratedMeshEditor:
                     if self.is_pinching:
                         self.end_pinch()
                 
-                # Draw UI elements
-                self.draw_ui(display_img)
+                # Draw modern UI elements
+                self.draw_modern_ui(display_img)
                 
                 # Show the integrated view
-                cv2.imshow("Integrated Mesh Editor", display_img)
+                cv2.imshow("Mesh Editor", display_img)
                 
-                # Process keyboard shortcuts (now works in any mode)
+                # Process keyboard shortcuts
                 key = cv2.waitKey(1) & 0xFF
                 if key == 27:  # ESC key
                     break
@@ -870,24 +1079,26 @@ class IntegratedMeshEditor:
                 elif key == ord('s'):
                     self.save_mesh()
                 elif key == ord('v'):
-                    self.handle_button_click("View Mode")
+                    self.set_view_mode()
                 elif key == ord('l'):
-                    self.handle_button_click("Lasso Select")
+                    self.set_lasso_mode()
                 elif key == ord('e'):
                     # Toggle between Lasso and Edit modes with 'e'
                     if self.mode == "lasso":
-                        self.handle_button_click("Edit Mode")
+                        self.set_edit_mode()
                     elif self.mode == "edit":
-                        self.handle_button_click("Lasso Select")
+                        self.set_lasso_mode()
                     else:
                         # If in view mode, go to lasso first for selection
-                        self.handle_button_click("Lasso Select")
+                        self.set_lasso_mode()
                 elif key == ord('f'):
                     self.set_front_view()
                 elif key == ord('t'):
                     self.set_top_view()
                 elif key == ord('d'):
                     self.set_side_view()
+                elif key == ord('h'):
+                    self.toggle_help()
                 elif key == ord('z') and self.vertex_movement_history:
                     # Undo last movement
                     before_positions, _ = self.vertex_movement_history.pop()
@@ -907,6 +1118,9 @@ class IntegratedMeshEditor:
                     self.zoom = max(0.1, self.zoom)
                     self.view_control.set_zoom(self.zoom)
                     self.update_mesh_visualization()
+                # Close help overlay on any key press if it's open
+                elif self.show_help:
+                    self.show_help = False
                 
                 # Slight delay to reduce CPU usage
                 time.sleep(0.01)
