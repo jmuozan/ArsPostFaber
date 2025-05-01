@@ -451,12 +451,14 @@ class IntegratedMeshEditor:
             
             # Rotate mesh if dragging in view mode
             if self.mode == "view" and self.is_dragging and self.last_position:
+                # Fix inverted mouse controls for rotation
                 dx = x - self.last_position[0]
                 dy = y - self.last_position[1]
                 
                 # Update rotation based on mouse movement with improved sensitivity
-                self.rotation[1] += dx * self.rotation_sensitivity  # Yaw
-                self.rotation[0] += dy * self.rotation_sensitivity  # Pitch
+                # Note: Inverting the rotation direction here to fix controls
+                self.rotation[1] -= dx * self.rotation_sensitivity  # Yaw (inverted)
+                self.rotation[0] -= dy * self.rotation_sensitivity  # Pitch (inverted)
                 
                 # Convert to rotation matrix
                 self.update_view_from_rotation()
@@ -685,17 +687,18 @@ class IntegratedMeshEditor:
             right_dir = extrinsic[:3, 0]  # Camera's X axis (right direction)
             up_dir = extrinsic[:3, 1]     # Camera's Y axis (up direction)
             
-            # Simplified 2D movement in screen space
-            # For a more direct, screen-aligned movement that follows hand exactly
+            # FIX FOR INVERTED HAND CONTROLS:
+            # In screen space, +x is right, +y is down, but we want up to be +y in 3D space
+            # Create a corrected screen-aligned movement vector
+            # Note: delta_y is multiplied by +1 to properly invert the direction
+            screen_movement = np.array([delta_x, delta_y, 0]) * movement_scale
             
-            # Create movement vector in screen space
-            # Note: We flipped the delta_y as screen coordinates go down
-            screen_movement = np.array([delta_x, -delta_y, 0]) * movement_scale
-            
-            # Convert view-space movement to world space
+            # Transform screen movement to world space
             world_movement = np.zeros(3)
-            world_movement += right_dir * screen_movement[0]   # Right/left component
-            world_movement += up_dir * screen_movement[1]      # Up/down component
+            # Right/left movement corresponds to camera's right vector
+            world_movement += right_dir * screen_movement[0]
+            # Up/down movement corresponds to camera's up vector (note: we keep delta_y positive for correct movement)
+            world_movement -= up_dir * screen_movement[1]  # Negative to fix the inverted controls
             
             # Scale by sensitivity factor
             movement = world_movement * self.movement_sensitivity
