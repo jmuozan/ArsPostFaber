@@ -31,7 +31,7 @@ class IntegratedMeshEditor:
         # Sensitivity settings
         self.rotation_sensitivity = 0.2  # Reduced for finer control
         self.zoom_sensitivity = 0.03  # Reduced for finer control
-        self.movement_sensitivity = 0.1  # Increased for faster response
+        self.movement_sensitivity = 0.15  # Increased for faster response
         
         # Initialize MediaPipe hands
         print("Initializing MediaPipe...")
@@ -274,49 +274,30 @@ class IntegratedMeshEditor:
     
     def update_mesh_visualization(self):
         """Update the mesh visualization."""
-        # Try to set material options to make vertices more visible
+        # Optimize: Only update what's needed for performance
         try:
-            material = self.vis.get_render_option()
-            material.point_size = 8.0  # Make vertices larger
-            material.line_width = 2.0  # Thicker lines for edges
-        except Exception as e:
-            pass
-        
-        # Create a wireframe version of the mesh to better show edges
-        try:
-            # Extract edges from mesh and create LineSet
-            edges = o3d.geometry.LineSet.create_from_triangle_mesh(self.mesh)
-            edges.paint_uniform_color(self.edge_color)  # Color the edges black
+            # Highlight selected vertices
+            vertex_colors = np.asarray(self.mesh.vertex_colors)
+            if len(vertex_colors) == 0:
+                vertex_colors = np.ones((len(self.mesh.vertices), 3)) * self.vertex_color
             
-            # Try to add/update the edges in the visualizer
-            if hasattr(self, 'edges_added'):
-                self.vis.update_geometry(edges)
-            else:
-                self.vis.add_geometry(edges)
-                self.edges_added = True
-        except Exception:
-            pass
-        
-        # Highlight selected vertices
-        vertex_colors = np.asarray(self.mesh.vertex_colors)
-        if len(vertex_colors) == 0:
-            vertex_colors = np.ones((len(self.mesh.vertices), 3)) * self.vertex_color
-        
-        # Reset all vertices to default blue-ish color
-        vertex_colors[:] = self.vertex_color
-        
-        # Highlight selected vertices in red
-        for idx in self.selected_vertices:
-            if 0 <= idx < len(vertex_colors):
-                vertex_colors[idx] = self.selected_vertex_color
-        
-        # Apply vertex colors to mesh
-        self.mesh.vertex_colors = o3d.utility.Vector3dVector(vertex_colors)
-        
-        # Update mesh in visualizer
-        self.vis.update_geometry(self.mesh)
-        self.vis.poll_events()
-        self.vis.update_renderer()
+            # Reset all vertices to default blue-ish color
+            vertex_colors[:] = self.vertex_color
+            
+            # Highlight selected vertices in red
+            for idx in self.selected_vertices:
+                if 0 <= idx < len(vertex_colors):
+                    vertex_colors[idx] = self.selected_vertex_color
+            
+            # Apply vertex colors to mesh
+            self.mesh.vertex_colors = o3d.utility.Vector3dVector(vertex_colors)
+            
+            # Update mesh in visualizer
+            self.vis.update_geometry(self.mesh)
+            self.vis.poll_events()
+            self.vis.update_renderer()
+        except Exception as e:
+            print(f"Visualization update error: {e}")
     
     def end_pinch(self):
         """End the pinching gesture."""
@@ -402,22 +383,24 @@ class IntegratedMeshEditor:
     
     def draw_hand_landmarks(self, frame, hand_landmarks, results=None):
         """Draw hand landmarks on the frame using MediaPipe."""
-        if hand_landmarks:
-            # Detect if this is a right hand
+        # Only show hand landmarks in edit mode and only for the active hand
+        if self.mode == "edit" and hand_landmarks:
+            # Detect if this is the active hand
             is_right = self.detect_right_hand(hand_landmarks, results)
             is_active = (is_right and self.active_hand == "right") or (not is_right and self.active_hand == "left")
             
-            # Draw hand landmarks
-            self.mp_drawing.draw_landmarks(
-                frame,
-                hand_landmarks,
-                self.mp_hands.HAND_CONNECTIONS,
-                self.mp_drawing_styles.get_default_hand_landmarks_style(),
-                self.mp_drawing_styles.get_default_hand_connections_style()
-            )
-            
-            # If in edit mode, draw a line from index to thumb
-            if self.mode == "edit":
+            # Only draw landmarks for the active hand
+            if is_active:
+                # Draw hand landmarks
+                self.mp_drawing.draw_landmarks(
+                    frame,
+                    hand_landmarks,
+                    self.mp_hands.HAND_CONNECTIONS,
+                    self.mp_drawing_styles.get_default_hand_landmarks_style(),
+                    self.mp_drawing_styles.get_default_hand_connections_style()
+                )
+                
+                # Draw pinch visualization
                 thumb_tip = hand_landmarks.landmark[self.mp_hands.HandLandmark.THUMB_TIP]
                 index_tip = hand_landmarks.landmark[self.mp_hands.HandLandmark.INDEX_FINGER_TIP]
                 
@@ -431,12 +414,8 @@ class IntegratedMeshEditor:
                     (thumb_tip.y - index_tip.y) ** 2
                 )
                 
-                # Set color based on pinch and whether it's the active hand
-                if is_active:
-                    color = (0, 0, 255) if distance < 0.08 else (0, 255, 0)
-                else:
-                    # Gray for inactive hand
-                    color = (150, 150, 150)
+                # Set color based on pinch
+                color = (0, 0, 255) if distance < 0.08 else (0, 255, 0)
                 
                 # Draw line between index and thumb
                 cv2.line(frame, thumb_pos, index_pos, color, 2)
@@ -445,14 +424,6 @@ class IntegratedMeshEditor:
                 mid_x = (thumb_pos[0] + index_pos[0]) // 2
                 mid_y = (thumb_pos[1] + index_pos[1]) // 2
                 cv2.circle(frame, (mid_x, mid_y), 5, color, -1)
-                
-                # Add hand indicator text near the hand
-                hand_type = "Right" if is_right else "Left"
-                status = "ACTIVE" if is_active else "INACTIVE"
-                label = f"{hand_type}: {status}"
-                label_color = (0, 255, 0) if is_active else (150, 150, 150)
-                cv2.putText(frame, label, (thumb_pos[0] - 50, thumb_pos[1] - 20),
-                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, label_color, 1)
     
     def mouse_callback(self, event, x, y, flags, param):
         """Handle mouse events."""
@@ -513,19 +484,6 @@ class IntegratedMeshEditor:
             delta = -np.sign(flags)  # Different direction on macOS
             self.zoom += delta * self.zoom_sensitivity
             self.zoom = max(0.1, min(2.0, self.zoom))
-            self.view_control.set_zoom(self.zoom)
-            self.update_mesh_visualization()
-            
-        # Alternative zoom with keys (+ and -)
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('+') or key == ord('='):  # Plus key
-            self.zoom += self.zoom_sensitivity
-            self.zoom = min(2.0, self.zoom)
-            self.view_control.set_zoom(self.zoom)
-            self.update_mesh_visualization()
-        elif key == ord('-') or key == ord('_'):  # Minus key
-            self.zoom -= self.zoom_sensitivity
-            self.zoom = max(0.1, self.zoom)
             self.view_control.set_zoom(self.zoom)
             self.update_mesh_visualization()
     
@@ -714,29 +672,33 @@ class IntegratedMeshEditor:
             # Calculate how much the hand has moved since starting the pinch
             delta_x = pinch_center[0] - self.initial_pinch_pos[0]
             delta_y = pinch_center[1] - self.initial_pinch_pos[1]
-            delta_z = pinch_center[2] - self.initial_pinch_pos[2]
             
             # Apply scaling factor for more responsive movement
             movement_scale = 25.0  # Increased for faster response
             
-            # Fix inverted controls - negate delta_y so up movement = up on screen
-            delta_y = -delta_y  # This makes movement follow hand direction naturally
-            
-            # Apply view-dependent movement for better XY alignment with hand movement
-            # Get current view direction and camera parameters
+            # Get current view parameters
             param = self.view_control.convert_to_pinhole_camera_parameters()
             extrinsic = np.array(param.extrinsic)
             
-            # Extract camera orientation vectors from the extrinsic matrix
+            # Get the camera's view vectors
+            front_dir = extrinsic[:3, 2]  # Camera's Z axis (looking direction)
             right_dir = extrinsic[:3, 0]  # Camera's X axis (right direction)
             up_dir = extrinsic[:3, 1]     # Camera's Y axis (up direction)
             
-            # Create movement vector based on 2D screen movement
-            view_movement = (right_dir * delta_x * movement_scale + 
-                             up_dir * delta_y * movement_scale)
+            # Simplified 2D movement in screen space
+            # For a more direct, screen-aligned movement that follows hand exactly
+            
+            # Create movement vector in screen space
+            # Note: We flipped the delta_y as screen coordinates go down
+            screen_movement = np.array([delta_x, -delta_y, 0]) * movement_scale
+            
+            # Convert view-space movement to world space
+            world_movement = np.zeros(3)
+            world_movement += right_dir * screen_movement[0]   # Right/left component
+            world_movement += up_dir * screen_movement[1]      # Up/down component
             
             # Scale by sensitivity factor
-            movement = view_movement * self.movement_sensitivity
+            movement = world_movement * self.movement_sensitivity
             
             # Apply movement to selected vertices
             vertices = np.asarray(self.mesh.vertices)
