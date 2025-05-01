@@ -20,6 +20,7 @@ class IntegratedMeshEditor:
         self.mesh_modified = False
         self.is_pinching = False  # Add is_pinching attribute
         self.initial_pinch_pos = None  # Track initial pinch position
+        self.right_hand_detected = False  # Track if current hand is right hand
         
         # Add colors for different parts
         self.vertex_color = [0.3, 0.7, 1.0]  # Blue for vertices
@@ -30,7 +31,7 @@ class IntegratedMeshEditor:
         # Sensitivity settings
         self.rotation_sensitivity = 0.2  # Reduced for finer control
         self.zoom_sensitivity = 0.03  # Reduced for finer control
-        self.movement_sensitivity = 0.03  # Increased from 0.005 for faster response
+        self.movement_sensitivity = 0.06  # Doubled for faster response (original: 0.03)
         
         # Initialize MediaPipe hands
         print("Initializing MediaPipe...")
@@ -52,6 +53,11 @@ class IntegratedMeshEditor:
             self.mesh.compute_vertex_normals()
         self.mesh.paint_uniform_color([0.7, 0.7, 0.7])
         self.mesh.translate(-self.mesh.get_center())
+        
+        # First, try to remove the purple sphere
+        self.clean_mesh()
+        
+        # Now save the cleaned mesh as the original
         self.original_mesh = copy.deepcopy(self.mesh)
         
         # Initialize webcam
@@ -81,6 +87,142 @@ class IntegratedMeshEditor:
         
         # Movement history for mesh vertices
         self.vertex_movement_history = deque(maxlen=10)  # Store last 10 movements
+    
+    def clean_mesh(self):
+        """Clean the mesh by removing any purple sphere in the center."""
+        print("Cleaning mesh...")
+        # Try color-based approach first
+        self.remove_purple_vertices()
+        # Then try position-based approach as backup
+        self.remove_center_geometry()
+    
+    def remove_purple_vertices(self):
+        """Remove vertices with purple color from the mesh."""
+        try:
+            print("Checking for purple vertices...")
+            
+            # First check if we need to rebuild vertex colors
+            vertices = np.asarray(self.mesh.vertices)
+            triangles = np.asarray(self.mesh.triangles)
+            colors = np.asarray(self.mesh.vertex_colors)
+            
+            if len(colors) == 0:
+                # If no colors, just paint the mesh and return
+                self.mesh.paint_uniform_color([0.7, 0.7, 0.7])
+                print("No vertex colors found in mesh")
+                return
+                
+            # Look for purple vertices - very specific to the problem shown in screenshot
+            purple_vertices = set()
+            for i, color in enumerate(colors):
+                # Purple/magenta detection - high red and blue values, low green
+                if color[0] > 0.7 and color[2] > 0.7 and color[1] < 0.3:
+                    purple_vertices.add(i)
+            
+            if purple_vertices:
+                print(f"Found {len(purple_vertices)} purple vertices")
+                
+                # Create list of triangles to keep
+                triangles_to_keep = []
+                for i, triangle in enumerate(triangles):
+                    # If any vertex in this triangle is purple, skip it
+                    if (triangle[0] in purple_vertices or 
+                        triangle[1] in purple_vertices or 
+                        triangle[2] in purple_vertices):
+                        continue
+                    triangles_to_keep.append(i)
+                
+                if len(triangles_to_keep) < len(triangles):
+                    # Create a new mesh without purple triangles
+                    print(f"Removing {len(triangles) - len(triangles_to_keep)} triangles with purple vertices")
+                    new_triangles = triangles[triangles_to_keep]
+                    
+                    new_mesh = o3d.geometry.TriangleMesh()
+                    new_mesh.vertices = o3d.utility.Vector3dVector(vertices)
+                    new_mesh.triangles = o3d.utility.Vector3iVector(new_triangles)
+                    
+                    # Reset colors for the new mesh
+                    new_mesh.paint_uniform_color([0.7, 0.7, 0.7])
+                    new_mesh.compute_vertex_normals()
+                    
+                    self.mesh = new_mesh
+                    print("Purple vertices removed!")
+                else:
+                    print("No purple triangles found to remove")
+            else:
+                print("No purple vertices found in this mesh")
+                
+        except Exception as e:
+            print(f"Error removing purple vertices: {e}")
+    
+    def remove_center_geometry(self):
+        """Remove any geometry located at the center of the mesh."""
+        try:
+            print("Checking for center geometry...")
+            # Get mesh vertices and find center region
+            vertices = np.asarray(self.mesh.vertices)
+            if len(vertices) == 0:
+                return
+                
+            # Find the mesh center
+            center = np.mean(vertices, axis=0)
+            
+            # Get the triangles
+            triangles = np.asarray(self.mesh.triangles)
+            if len(triangles) == 0:
+                return
+                
+            # Calculate distance from each vertex to center
+            distances = np.linalg.norm(vertices - center, axis=1)
+            
+            # Get the median distance - we'll use this to identify central vertices
+            median_distance = np.median(distances)
+            
+            # Use a more aggressive threshold - 30% of median distance
+            threshold = median_distance * 0.3
+            central_vertices_indices = np.where(distances < threshold)[0]
+            
+            if len(central_vertices_indices) > 0 and len(central_vertices_indices) < len(vertices) * 0.2:
+                print(f"Found {len(central_vertices_indices)} vertices near center that might form a sphere")
+                
+                # Convert to set for faster lookups
+                central_vertices = set(central_vertices_indices)
+                
+                # Create a list of triangles to keep
+                # More aggressive: remove ANY triangle with ANY vertex in the central region
+                keep_triangles = []
+                
+                for i, triangle in enumerate(triangles):
+                    # If any vertex of this triangle is in central_vertices, skip it
+                    if (triangle[0] in central_vertices or 
+                        triangle[1] in central_vertices or 
+                        triangle[2] in central_vertices):
+                        continue
+                    keep_triangles.append(i)
+                
+                if len(keep_triangles) < len(triangles):
+                    print(f"Removing {len(triangles) - len(keep_triangles)} triangles from center")
+                    new_triangles = triangles[keep_triangles]
+                    
+                    # Create a new mesh with only the kept triangles
+                    new_mesh = o3d.geometry.TriangleMesh()
+                    new_mesh.vertices = o3d.utility.Vector3dVector(vertices)
+                    new_mesh.triangles = o3d.utility.Vector3iVector(new_triangles)
+                    
+                    # Reset colors
+                    new_mesh.paint_uniform_color([0.7, 0.7, 0.7])
+                    new_mesh.compute_vertex_normals()
+                    
+                    # Replace the current mesh
+                    self.mesh = new_mesh
+                    print("Center geometry removed from mesh")
+                else:
+                    print("No center triangles identified for removal")
+            else:
+                print("No significant center geometry detected")
+                
+        except Exception as e:
+            print(f"Error removing center geometry: {e}")
     
     def ensure_mesh_exists(self, mesh_path):
         """Create a cylinder mesh if the file doesn't exist."""
@@ -327,13 +469,34 @@ class IntegratedMeshEditor:
         cv2.putText(frame, f"Selected vertices: {len(self.selected_vertices)}", (250, 80), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         
+        # Display right/left hand status
+        hand_status = "Right Hand" if self.right_hand_detected else "Left/No Hand"
+        hand_color = (0, 255, 0) if self.right_hand_detected else (0, 165, 255)
+        cv2.putText(frame, f"Hand: {hand_status}", (500, 80), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, hand_color, 1)
+        
         # Draw lasso if in lasso mode
         if self.mode == "lasso" and len(self.lasso_points) > 1:
             pts = np.array(self.lasso_points, np.int32)
             pts = pts.reshape((-1, 1, 2))
             cv2.polylines(frame, [pts], False, (0, 255, 0), 2)
     
-    def draw_hand_landmarks(self, frame, hand_landmarks):
+    def detect_right_hand(self, hand_landmarks, results):
+        """Detect if the hand is a right hand."""
+        # MediaPipe provides hand classification (right/left) in multi_handedness
+        if hasattr(results, 'multi_handedness') and results.multi_handedness:
+            for idx, handedness in enumerate(results.multi_handedness):
+                # Check if this is the hand we're processing
+                if results.multi_hand_landmarks[idx] == hand_landmarks:
+                    # Get the classification (right or left hand)
+                    classification = handedness.classification[0]
+                    # Check if it's a right hand
+                    return classification.label.lower() == "right"
+        
+        # If we can't determine, assume it's not a right hand for safety
+        return False
+    
+    def draw_hand_landmarks(self, frame, hand_landmarks, is_right_hand=False):
         """Draw hand landmarks on the frame using MediaPipe."""
         if hand_landmarks:
             # Draw hand landmarks
@@ -360,14 +523,26 @@ class IntegratedMeshEditor:
                     (thumb_tip.y - index_tip.y) ** 2
                 )
                 
+                # Set color based on pinch and whether it's the right hand
+                if is_right_hand:
+                    color = (0, 0, 255) if distance < 0.08 else (0, 255, 0)
+                else:
+                    # Gray for left hand (non-functional)
+                    color = (150, 150, 150)
+                
                 # Draw line between index and thumb
-                color = (0, 0, 255) if distance < 0.08 else (0, 255, 0)
                 cv2.line(frame, thumb_pos, index_pos, color, 2)
                 
                 # Draw a circle at midpoint
                 mid_x = (thumb_pos[0] + index_pos[0]) // 2
                 mid_y = (thumb_pos[1] + index_pos[1]) // 2
                 cv2.circle(frame, (mid_x, mid_y), 5, color, -1)
+                
+                # Add right/left hand indicator text near the hand
+                label = "Right" if is_right_hand else "Left"
+                label_color = (0, 255, 0) if is_right_hand else (0, 165, 255)
+                cv2.putText(frame, label, (thumb_pos[0] - 30, thumb_pos[1] - 20),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, label_color, 1)
     
     def mouse_callback(self, event, x, y, flags, param):
         """Handle mouse events."""
