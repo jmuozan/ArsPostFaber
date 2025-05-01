@@ -14,6 +14,8 @@ class IntegratedMeshEditor:
         # State variables
         self.mode = "view"  # "view", "lasso", "edit"
         self.lasso_points = []
+        self.lasso_start_point = None  # Track the starting point for auto-closing
+        self.lasso_auto_close_threshold = 15  # Distance in pixels to auto-close the lasso
         self.selected_vertices = []
         self.hand_landmarks = None
         self.running = True
@@ -255,6 +257,7 @@ class IntegratedMeshEditor:
         self.mesh = copy.deepcopy(self.original_mesh)
         self.selected_vertices = []
         self.lasso_points = []
+        self.lasso_start_point = None
         self.mesh_modified = False
         
         # Update visualization
@@ -343,9 +346,23 @@ class IntegratedMeshEditor:
         
         # Draw lasso if in lasso mode
         if self.mode == "lasso" and len(self.lasso_points) > 1:
+            # Draw the current lasso points
             pts = np.array(self.lasso_points, np.int32)
             pts = pts.reshape((-1, 1, 2))
             cv2.polylines(frame, [pts], False, (0, 255, 0), 2)
+            
+            # Draw a line from the last point to the first point if close enough
+            if self.lasso_start_point and len(self.lasso_points) > 3:
+                last_point = self.lasso_points[-1]
+                dist_to_start = np.sqrt((last_point[0] - self.lasso_start_point[0])**2 + 
+                                        (last_point[1] - self.lasso_start_point[1])**2)
+                
+                # Show potential closing line if close enough
+                if dist_to_start < self.lasso_auto_close_threshold * 2:
+                    cv2.line(frame, 
+                             last_point, 
+                             self.lasso_start_point, 
+                             (0, 200, 200), 1)
     
     def detect_right_hand(self, hand_landmarks, results=None):
         """Detect if the hand is a right hand."""
@@ -438,6 +455,7 @@ class IntegratedMeshEditor:
             # Start lasso selection if in lasso mode
             if self.mode == "lasso":
                 self.lasso_points = [(x, y)]
+                self.lasso_start_point = (x, y)  # Store start point
             
             # Start rotation if in view mode
             if self.mode == "view":
@@ -447,27 +465,53 @@ class IntegratedMeshEditor:
         # Continue lasso selection if in lasso mode
         elif event == cv2.EVENT_MOUSEMOVE:
             if self.mode == "lasso" and len(self.lasso_points) > 0:
-                self.lasso_points.append((x, y))
+                # Check if the new point is close to the start point
+                if self.lasso_start_point and len(self.lasso_points) > 3:
+                    dist_to_start = np.sqrt((x - self.lasso_start_point[0])**2 + 
+                                           (y - self.lasso_start_point[1])**2)
+                    
+                    # Auto-close the lasso if we get close to the start point
+                    if dist_to_start < self.lasso_auto_close_threshold:
+                        self.lasso_points.append(self.lasso_start_point)  # Close the lasso
+                        self.process_lasso_selection()
+                        return
+                
+                # Calculate distance to last point for smoothing
+                last_point = self.lasso_points[-1]
+                dist_to_last = np.sqrt((x - last_point[0])**2 + (y - last_point[1])**2)
+                
+                # Only add points that are at least 5 pixels away from the last point
+                if dist_to_last > 5:
+                    self.lasso_points.append((x, y))
             
-            # Rotate mesh if dragging in view mode
+            # Rotate mesh if dragging in view mode - COMPLETELY REWRITTEN ORBIT CONTROLS
             if self.mode == "view" and self.is_dragging and self.last_position:
-                # Fix inverted mouse controls for rotation
+                # Get mouse movement delta
                 dx = x - self.last_position[0]
                 dy = y - self.last_position[1]
                 
-                # Update rotation based on mouse movement with improved sensitivity
-                # Note: Inverting the rotation direction here to fix controls
-                self.rotation[1] -= dx * self.rotation_sensitivity  # Yaw (inverted)
-                self.rotation[0] -= dy * self.rotation_sensitivity  # Pitch (inverted)
+                # Convert to rotation angles (negative dx for natural rotation direction)
+                # When moving mouse to the right, object should rotate to the right
+                # When moving mouse up, object should rotate upward
+                delta_yaw = -dx * self.rotation_sensitivity
+                delta_pitch = -dy * self.rotation_sensitivity
                 
-                # Convert to rotation matrix
+                # Update rotation angles
+                self.rotation[1] += delta_yaw
+                self.rotation[0] += delta_pitch
+                
+                # Apply the rotation to the view
                 self.update_view_from_rotation()
                 
+                # Update last position
                 self.last_position = (x, y)
         
         # End lasso selection or rotation
         elif event == cv2.EVENT_LBUTTONUP:
             if self.mode == "lasso" and len(self.lasso_points) > 2:
+                # Add the starting point to close the lasso
+                if self.lasso_start_point:
+                    self.lasso_points.append(self.lasso_start_point)
                 self.process_lasso_selection()
             
             self.is_dragging = False
@@ -494,7 +538,9 @@ class IntegratedMeshEditor:
         # Convert Euler angles to direction vector
         pitch, yaw, _ = [math.radians(angle) for angle in self.rotation]
         
-        # Calculate front direction vector
+        # Calculate front direction vector - natural orbit control
+        # When yaw increases, we rotate rightward around the object
+        # When pitch increases, we rotate upward around the object
         x = math.sin(yaw) * math.cos(pitch)
         y = math.sin(pitch)
         z = math.cos(yaw) * math.cos(pitch)
@@ -520,15 +566,18 @@ class IntegratedMeshEditor:
         if button_name == "View Mode":
             self.mode = "view"
             self.lasso_points = []
+            self.lasso_start_point = None
         
         elif button_name == "Lasso Select":
             self.mode = "lasso"
             self.lasso_points = []
+            self.lasso_start_point = None
         
         elif button_name == "Edit Mode":
             # Allow switching to edit mode even if no vertices are selected
             self.mode = "edit"
             self.lasso_points = []
+            self.lasso_start_point = None
         
         elif button_name == "Reset Mesh":
             self.reset_mesh()
@@ -556,7 +605,7 @@ class IntegratedMeshEditor:
     
     def process_lasso_selection(self):
         """Process the lasso selection to select vertices."""
-        if not self.lasso_points:
+        if not self.lasso_points or len(self.lasso_points) < 3:
             return
         
         # Create a mask for the lasso region
@@ -599,6 +648,10 @@ class IntegratedMeshEditor:
         # Update selected vertices
         self.selected_vertices = selected_indices
         print(f"Selected {len(selected_indices)} vertices")
+        
+        # Reset lasso points after selection is complete
+        self.lasso_points = []
+        self.lasso_start_point = None
         
         # Update mesh visualization to highlight selected vertices
         self.update_mesh_visualization()
@@ -687,10 +740,7 @@ class IntegratedMeshEditor:
             right_dir = extrinsic[:3, 0]  # Camera's X axis (right direction)
             up_dir = extrinsic[:3, 1]     # Camera's Y axis (up direction)
             
-            # FIX FOR INVERTED HAND CONTROLS:
-            # In screen space, +x is right, +y is down, but we want up to be +y in 3D space
             # Create a corrected screen-aligned movement vector
-            # Note: delta_y is multiplied by +1 to properly invert the direction
             screen_movement = np.array([delta_x, delta_y, 0]) * movement_scale
             
             # Transform screen movement to world space
@@ -746,6 +796,9 @@ class IntegratedMeshEditor:
         print("  +/-: Zoom in/out")
         print("  Mouse wheel: Zoom in/out")
         print("  Left mouse button: Rotate in view mode, draw lasso in lasso mode")
+        print("  NOTE: Orbit controls have been completely rewritten for natural rotation")
+        print("        - Moving mouse right rotates the mesh right")
+        print("        - Moving mouse up rotates the mesh up")
         
         while self.running:
             try:
@@ -794,8 +847,8 @@ class IntegratedMeshEditor:
                 if results.multi_hand_landmarks:
                     for hand_landmarks in results.multi_hand_landmarks:
                         self.hand_landmarks = hand_landmarks
-                        self.draw_hand_landmarks(display_img, hand_landmarks)
-                        self.process_hand_gesture(hand_landmarks, frame)
+                        self.draw_hand_landmarks(display_img, hand_landmarks, results)
+                        self.process_hand_gesture(hand_landmarks, frame, results)
                 else:
                     self.hand_landmarks = None
                     # If hand disappears during pinch, end the pinch
