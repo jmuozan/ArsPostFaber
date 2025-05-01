@@ -65,7 +65,7 @@ class IntegratedMeshEditor:
         self.mesh = o3d.io.read_triangle_mesh(mesh_path)
         if not self.mesh.has_vertex_normals():
             self.mesh.compute_vertex_normals()
-        self.mesh.paint_uniform_color([0.85, 0.85, 0.85])  # Light gray
+        self.mesh.paint_uniform_color([1.0, 1.0, 1.0])
         self.mesh.translate(-self.mesh.get_center())
         
         # First, try to remove the purple sphere
@@ -99,6 +99,27 @@ class IntegratedMeshEditor:
         
         # Movement history for mesh vertices
         self.vertex_movement_history = deque(maxlen=10)  # Store last 10 movements
+    
+    def refresh_rendering(self):
+        """Force a complete refresh of materials and lighting."""
+        try:
+            # First update the mesh geometry as usual
+            self.update_mesh_visualization()
+            
+            # Then force a reset of the rendering pipeline
+            self.vis.update_renderer()
+            
+            # Additional step: Force the view to slightly change and back
+            # This "nudges" Open3D to recompute lighting
+            current_params = self.view_control.convert_to_pinhole_camera_parameters()
+            
+            # Slightly move and restore
+            self.view_control.rotate(0.1, 0.1)  # Small rotation
+            self.view_control.rotate(-0.1, -0.1)  # Restore original position
+            
+            print("Rendering refreshed")
+        except Exception as e:
+            print(f"Render refresh failed: {e}")
     
     def clean_mesh(self):
         """Clean the mesh by removing any purple sphere in the center."""
@@ -306,10 +327,10 @@ class IntegratedMeshEditor:
             print("Switched to RIGHT hand control")
             
     def toggle_help(self):
-        """Toggle help display."""
+        """Toggle the help overlay display with debug information."""
         self.show_help = not self.show_help
         print(f"Help overlay {'shown' if self.show_help else 'hidden'}")
-    
+        
     def reset_mesh(self):
         """Reset mesh to original state."""
         self.mesh = copy.deepcopy(self.original_mesh)
@@ -334,25 +355,28 @@ class IntegratedMeshEditor:
                 print(f"Error saving mesh: {e}")
     
     def update_mesh_visualization(self):
-        """Update the mesh visualization."""
+        """Update the mesh visualization with proper vertex coloring."""
         try:
-            # Highlight selected vertices
-            vertex_colors = np.asarray(self.mesh.vertex_colors)
-            if len(vertex_colors) == 0:
-                vertex_colors = np.ones((len(self.mesh.vertices), 3)) * self.face_color
+            # Create fresh colors for the entire mesh
+            vertices = np.asarray(self.mesh.vertices)
+            vertex_colors = np.ones((len(vertices), 3)) * self.face_color
             
-            # Reset all vertices to default color
-            vertex_colors[:] = self.face_color
-            
-            # Highlight selected vertices
+            # Apply highlight color to selected vertices
             for idx in self.selected_vertices:
                 if 0 <= idx < len(vertex_colors):
                     vertex_colors[idx] = self.selected_vertex_color
             
-            # Apply vertex colors to mesh
+            # Apply colors to mesh
             self.mesh.vertex_colors = o3d.utility.Vector3dVector(vertex_colors)
             
-            # Update mesh in visualizer
+            # Ensure normals are computed for proper lighting
+            self.mesh.compute_vertex_normals()
+            
+            # Ensure lighting is enabled for proper rendering
+            render_option = self.vis.get_render_option()
+            render_option.light_on = True
+            
+            # Update visualization
             self.vis.update_geometry(self.mesh)
             self.vis.poll_events()
             self.vis.update_renderer()
@@ -365,30 +389,29 @@ class IntegratedMeshEditor:
         self.initial_pinch_pos = None
     
     def draw_modern_ui(self, frame):
-        """Draw the modern UI elements on the frame."""
+        """Draw modern UI elements with improved help overlay support."""
         h, w = frame.shape[:2]
         
         # Draw top menu bar background
         cv2.rectangle(frame, (0, 0), (w, self.menu_height), self.bg_color, -1)
         
-        # Draw mode and input info
+        # Draw status information
         input_method = "Mouse (Right-Click)" if self.use_mouse_for_edit else f"{self.active_hand.upper()} Hand"
         status_text = f"Mode: {self.mode.upper()} | Input: {input_method} | Selected: {len(self.selected_vertices)}"
         status_x = w - 10 - cv2.getTextSize(status_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0][0]
         cv2.putText(frame, status_text, (status_x, 27), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.primary_color, 1)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.primary_color, 1)
         
-        # Draw top menu items
+        # Draw menu items
         for item in self.top_menu:
-            # Determine if this item has the open dropdown
             is_open = self.open_dropdown == item["name"] if self.open_dropdown else False
-            
-            # Draw menu item
             menu_color = self.active_color if is_open else self.primary_color
-            cv2.putText(frame, item["name"], (item["x"] + 10, 27), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, menu_color, 1)
             
-            # Draw dropdown triangle indicator
+            # Draw menu text
+            cv2.putText(frame, item["name"], (item["x"] + 10, 27), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, menu_color, 1)
+            
+            # Draw dropdown indicator
             if "dropdown" in item:
                 triangle_pts = np.array([
                     [item["x"] + item["width"] - 15, 17], 
@@ -397,101 +420,93 @@ class IntegratedMeshEditor:
                 ], np.int32)
                 cv2.fillPoly(frame, [triangle_pts], menu_color)
             
-            # Draw dropdown if open
+            # Draw open dropdown
             if is_open and "dropdown" in item:
-                # Dropdown background
                 dropdown_height = len(item["dropdown"]) * self.dropdown_item_height
                 dropdown_y = self.menu_height
                 dropdown_x = item["x"]
                 
+                # Dropdown background
                 cv2.rectangle(frame, 
-                             (dropdown_x, dropdown_y), 
-                             (dropdown_x + self.dropdown_width, dropdown_y + dropdown_height), 
-                             self.accent_color, -1)
+                            (dropdown_x, dropdown_y), 
+                            (dropdown_x + self.dropdown_width, dropdown_y + dropdown_height), 
+                            self.accent_color, -1)
                 
-                # Dropdown border
+                # Border
                 cv2.rectangle(frame, 
-                             (dropdown_x, dropdown_y), 
-                             (dropdown_x + self.dropdown_width, dropdown_y + dropdown_height), 
-                             self.highlight_color, 1)
+                            (dropdown_x, dropdown_y), 
+                            (dropdown_x + self.dropdown_width, dropdown_y + dropdown_height), 
+                            self.highlight_color, 1)
                 
                 # Dropdown items
                 for i, option in enumerate(item["dropdown"]):
                     option_y = dropdown_y + i * self.dropdown_item_height
                     
-                    # Highlight item based on current state
+                    # Determine if this option is active
                     highlighted = False
                     
-                    # Mode dropdown
                     if item["name"] == "Mode" and option["name"].lower().replace(" ", "_") == self.mode:
                         highlighted = True
-                    
-                    # Hand dropdown
                     elif item["name"] == "Hand" and (
                         (option["name"].lower().find("right") >= 0 and self.active_hand == "right") or
                         (option["name"].lower().find("left") >= 0 and self.active_hand == "left")):
                         highlighted = True
-                    
-                    # Input method dropdown
                     elif item["name"] == "Input" and (
                         (option["name"].lower().find("mouse") >= 0 and self.use_mouse_for_edit) or
                         (option["name"].lower().find("hand") >= 0 and not self.use_mouse_for_edit)):
                         highlighted = True
                         
-                    # Draw item background if highlighted
+                    # Draw highlight background
                     if highlighted:
                         cv2.rectangle(frame, 
-                                     (dropdown_x, option_y), 
-                                     (dropdown_x + self.dropdown_width, option_y + self.dropdown_item_height), 
-                                     self.highlight_color, -1)
+                                    (dropdown_x, option_y), 
+                                    (dropdown_x + self.dropdown_width, option_y + self.dropdown_item_height), 
+                                    self.highlight_color, -1)
                     
-                    # Draw item text
+                    # Draw option text
                     option_color = self.active_color if highlighted else self.primary_color
                     cv2.putText(frame, option["name"], 
-                               (dropdown_x + 10, option_y + 25), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, option_color, 1)
+                            (dropdown_x + 10, option_y + 25), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, option_color, 1)
         
         # Draw lasso if in lasso mode
         if self.mode == "lasso" and len(self.lasso_points) > 1:
-            # Draw the current lasso points
             pts = np.array(self.lasso_points, np.int32)
             pts = pts.reshape((-1, 1, 2))
             cv2.polylines(frame, [pts], False, (0, 255, 200), 1)
             
-            # Draw a line from the last point to the first point if close enough
+            # Show potential closing line
             if self.lasso_start_point and len(self.lasso_points) > 3:
                 last_point = self.lasso_points[-1]
                 dist_to_start = np.sqrt((last_point[0] - self.lasso_start_point[0])**2 + 
                                         (last_point[1] - self.lasso_start_point[1])**2)
                 
-                # Show potential closing line if close enough
                 if dist_to_start < self.lasso_auto_close_threshold * 2:
                     cv2.line(frame, 
-                             last_point, 
-                             self.lasso_start_point, 
-                             (0, 255, 255), 1)
-                             
-        # Show visual indicator for right-click edit mode
+                            last_point, 
+                            self.lasso_start_point, 
+                            (0, 255, 255), 1)
+                            
+        # Draw mouse edit indicator
         if self.mode == "edit" and self.use_mouse_for_edit and self.is_right_dragging:
-            # Draw a circle at the point where right mouse button was pressed
             cv2.circle(frame, self.initial_mouse_edit_pos, 5, (0, 200, 255), -1)
-            # Draw line to current position
             if self.last_position:
                 cv2.line(frame, self.initial_mouse_edit_pos, self.last_position, (0, 200, 255), 2)
         
-        # Draw help overlay if enabled
+        # Always draw help overlay last so it appears on top of everything
         if self.show_help:
             self.draw_help_overlay(frame)
+            print("Drawing help overlay")
 
     def draw_help_overlay(self, frame):
-        """Draw the help overlay with keyboard shortcuts."""
+        """Draw an improved help overlay with better visibility and readability."""
         h, w = frame.shape[:2]
         
-        # Semi-transparent overlay
+        # Create a full-screen dark overlay
         overlay = frame.copy()
         cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 0), -1)
         
-        # Add help text
+        # Define help text content
         help_commands = [
             "KEYBOARD CONTROLS:",
             "ESC: Exit application",
@@ -506,6 +521,7 @@ class IntegratedMeshEditor:
             "Z: Undo last movement",
             "+/-: Zoom in/out",
             "H: Toggle help overlay",
+            "M: Toggle mouse/hand input",
             "",
             "MOUSE CONTROLS:",
             "Left-click + drag: Rotate in view mode",
@@ -516,47 +532,46 @@ class IntegratedMeshEditor:
             "HAND GESTURES:",
             "Pinch index finger and thumb: Grab and move selected vertices",
             "",
-            "Press any key or click anywhere to close help"
+            "Click anywhere or press any key to close help"
         ]
         
-        # Calculate text block dimensions
-        text_height = len(help_commands) * 25
-        text_width = 450
+        # Configure help panel size and position
+        text_height = len(help_commands) * 30  # Taller for better spacing
+        text_width = 600  # Wider for longer text
         start_x = (w - text_width) // 2
         start_y = (h - text_height) // 2
         
-        # Draw background box
+        # Draw a prominent panel with border
         cv2.rectangle(overlay, 
-                     (start_x - 20, start_y - 40), 
-                     (start_x + text_width + 20, start_y + text_height + 20), 
-                     self.accent_color, -1)
+                    (start_x - 30, start_y - 60), 
+                    (start_x + text_width + 30, start_y + text_height + 30), 
+                    (40, 40, 40), -1)  # Dark gray background
         
         cv2.rectangle(overlay, 
-                     (start_x - 20, start_y - 40), 
-                     (start_x + text_width + 20, start_y + text_height + 20), 
-                     self.highlight_color, 1)
+                    (start_x - 30, start_y - 60), 
+                    (start_x + text_width + 30, start_y + text_height + 30), 
+                    (180, 180, 180), 2)  # Light gray border
         
-        # Draw title
+        # Draw panel title
         cv2.putText(overlay, "MESH EDITOR HELP", 
-                   (start_x, start_y - 15), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, self.active_color, 2)
+                (start_x, start_y - 25), 
+                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
         
-        # Draw commands
+        # Draw all command text
         for i, command in enumerate(help_commands):
-            y_pos = start_y + 25 * i + 25
+            y_pos = start_y + 30 * i + 25
             
-            # Highlight titles
-            if command.endswith(':'):
+            if command.endswith(':'):  # Section headers
                 cv2.putText(overlay, command, 
-                           (start_x, y_pos), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.active_color, 1)
-            else:
+                        (start_x, y_pos), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 255), 2)
+            else:  # Regular commands
                 cv2.putText(overlay, command, 
-                           (start_x, y_pos), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, self.primary_color, 1)
+                        (start_x, y_pos), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1)
         
-        # Blend the overlay
-        alpha = 0.85  # Transparency factor
+        # Blend overlay with high opacity for readability
+        alpha = 0.9
         cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
     
     def detect_right_hand(self, hand_landmarks, results=None):
@@ -653,24 +668,46 @@ class IntegratedMeshEditor:
                 cv2.circle(frame, (mid_x, mid_y), 5, color, -1)
     
     def mouse_callback(self, event, x, y, flags, param):
-        """Handle mouse events with consistent orbit controls across all view orientations."""
-        # If help is showing, clicking anywhere closes it
+        """Handle mouse events with consistent orbit controls and improved help functionality."""
+        # If help is showing and clicked anywhere, close it
         if self.show_help and event == cv2.EVENT_LBUTTONDOWN:
             self.show_help = False
+            print("Help overlay closed by click")
             return
             
         # Check for menu clicks
         if event == cv2.EVENT_LBUTTONDOWN:
+            # Check for top menu item clicks
+            if y <= self.menu_height:
+                for item in self.top_menu:
+                    if (item["x"] <= x <= item["x"] + item["width"]):
+                        # Found a clicked menu item
+                        if item["name"] == "Help":
+                            # Special case for Help button
+                            print("Help button clicked!")
+                            self.toggle_help()
+                            return
+                        elif "action" in item:
+                            # Other direct action items
+                            method = getattr(self, item["action"], None)
+                            if method:
+                                method()
+                            return
+                        elif "dropdown" in item:
+                            # Open dropdown menu
+                            self.open_dropdown = item["name"]
+                            return
+            
             # If a dropdown is open, check for clicks on its items
             if self.open_dropdown:
                 for item in self.top_menu:
                     if item["name"] == self.open_dropdown and "dropdown" in item:
                         dropdown_x = item["x"]
                         dropdown_y = self.menu_height
-                        dropdown_w = self.dropdown_width
+                        dropdown_width = self.dropdown_width
                         
                         # Check if click is within dropdown area
-                        if (dropdown_x <= x <= dropdown_x + dropdown_w):
+                        if (dropdown_x <= x <= dropdown_x + dropdown_width):
                             for i, option in enumerate(item["dropdown"]):
                                 option_y = dropdown_y + i * self.dropdown_item_height
                                 if (option_y <= y <= option_y + self.dropdown_item_height):
@@ -685,21 +722,7 @@ class IntegratedMeshEditor:
                 # If clicked outside dropdown, close it
                 self.open_dropdown = None
                 return
-            
-            # Check for clicks on top menu items
-            if y <= self.menu_height:
-                for item in self.top_menu:
-                    if (item["x"] <= x <= item["x"] + item["width"]):
-                        if "action" in item:
-                            # Direct action item - execute immediately
-                            method = getattr(self, item["action"], None)
-                            if method:
-                                method()
-                        elif "dropdown" in item:
-                            # Open dropdown
-                            self.open_dropdown = item["name"]
-                        return
-            
+                
             # Start lasso selection if in lasso mode
             if self.mode == "lasso" and y > self.menu_height:
                 self.lasso_points = [(x, y)]
@@ -718,21 +741,21 @@ class IntegratedMeshEditor:
                 self.initial_mouse_edit_pos = (x, y)
                 self.last_position = (x, y)
         
-        # Continue lasso selection if in lasso mode with improved smoothing
+        # Handle mouse movement events
         elif event == cv2.EVENT_MOUSEMOVE:
+            # Process lasso drawing
             if self.mode == "lasso" and len(self.lasso_points) > 0 and y > self.menu_height:
-                # Check if the new point is close to the start point
+                # Check for auto-closing the lasso
                 if self.lasso_start_point and len(self.lasso_points) > 3:
                     dist_to_start = np.sqrt((x - self.lasso_start_point[0])**2 + 
-                                          (y - self.lasso_start_point[1])**2)
+                                        (y - self.lasso_start_point[1])**2)
                     
-                    # Auto-close the lasso if we get close to the start point
                     if dist_to_start < self.lasso_auto_close_threshold:
-                        # Add intermediate points for a smoother curve
+                        # Add smooth closing points
                         last_point = self.lasso_points[-1]
                         dx = self.lasso_start_point[0] - last_point[0]
                         dy = self.lasso_start_point[1] - last_point[1]
-                        steps = 5  # Number of interpolation steps
+                        steps = 5
                         
                         for i in range(1, steps):
                             t = i / steps
@@ -740,34 +763,26 @@ class IntegratedMeshEditor:
                             interp_y = int(last_point[1] + dy * t)
                             self.lasso_points.append((interp_x, interp_y))
                             
-                        self.lasso_points.append(self.lasso_start_point)  # Close the lasso
+                        self.lasso_points.append(self.lasso_start_point)
                         self.process_lasso_selection()
                         return
                 
-                # Calculate distance to last point for smoothing
+                # Add points with smoothing
                 last_point = self.lasso_points[-1]
                 dist_to_last = np.sqrt((x - last_point[0])**2 + (y - last_point[1])**2)
                 
-                # Only add points that are at least min_distance away from the last point
                 if dist_to_last > self.lasso_min_distance:
-                    # Apply Bezier-like smoothing by adding intermediate points
-                    # when the distance is large
                     if dist_to_last > self.lasso_min_distance * 5:
-                        # Add intermediate points
-                        steps = int(dist_to_last / (self.lasso_min_distance * 2))
-                        steps = min(max(steps, 2), 10)  # Limit number of steps
-                        
-                        # Get previous point for curvature
+                        # Add smoothed points for large movements
                         prev_point = self.lasso_points[-2] if len(self.lasso_points) > 1 else last_point
-                        
-                        # Calculate control points for quadratic Bezier curve
-                        # This creates a smoother curve by considering direction of movement
                         control_x = last_point[0] * 2 - prev_point[0]
                         control_y = last_point[1] * 2 - prev_point[1]
                         
+                        steps = int(dist_to_last / (self.lasso_min_distance * 2))
+                        steps = min(max(steps, 2), 10)
+                        
                         for i in range(1, steps):
                             t = i / steps
-                            # Quadratic Bezier interpolation
                             bezier_x = int((1-t)**2 * last_point[0] + 
                                         2*(1-t)*t * control_x + 
                                         t**2 * x)
@@ -779,88 +794,66 @@ class IntegratedMeshEditor:
                         # Just add the point directly for small movements
                         self.lasso_points.append((x, y))
             
-            # Rotate mesh if dragging in view mode - CONSISTENT VIEW-RELATIVE ORBIT CONTROLS
+            # Handle view mode rotation
             if self.mode == "view" and self.is_dragging and self.last_position and y > self.menu_height:
-                # Get mouse movement delta
                 dx = x - self.last_position[0]
                 dy = y - self.last_position[1]
                 
-                # Use screen space orbit controls that are view-dependent
-                # Scale by sensitivity and apply rotation
-                rot_x = dy * self.rotation_sensitivity  # Rotation around right vector (x-axis)
-                rot_y = dx * self.rotation_sensitivity  # Rotation around up vector (y-axis)
+                # Apply rotation based on view orientation
+                rot_x = dy * self.rotation_sensitivity
+                rot_y = dx * self.rotation_sensitivity
                 
-                # Apply view-relative rotations
                 self.view_control.rotate(rot_y, rot_x)
-                
-                # Update last position
                 self.last_position = (x, y)
                 
-            # Mouse-based editing with right-click drag
+            # Handle mouse-based editing
             if self.mode == "edit" and self.use_mouse_for_edit and self.is_right_dragging and self.last_position and y > self.menu_height:
-                # Move selected vertices based on mouse movement
                 if len(self.selected_vertices) > 0:
-                    # Get mouse movement delta
                     dx = x - self.last_position[0]
                     dy = y - self.last_position[1]
                     
-                    # Apply scaling factor for more responsive movement
-                    movement_scale = 0.01  # Scale for mouse movement
-                    
-                    # Get current view parameters
+                    # Transform screen movement to world space
+                    movement_scale = 0.01
                     param = self.view_control.convert_to_pinhole_camera_parameters()
                     extrinsic = np.array(param.extrinsic)
                     
-                    # Get the camera's view vectors - directly from the camera matrix
-                    right_dir = extrinsic[:3, 0]  # Camera's X axis (right direction)
-                    up_dir = extrinsic[:3, 1]     # Camera's Y axis (up direction)
+                    right_dir = extrinsic[:3, 0]
+                    up_dir = extrinsic[:3, 1]
                     
-                    # Create a screen-aligned movement vector that's consistent with view orientation
                     screen_movement = np.array([dx, dy, 0]) * movement_scale
-                    
-                    # Transform screen movement to world space
                     world_movement = np.zeros(3)
-                    # Right/left movement corresponds to camera's right vector
                     world_movement += right_dir * screen_movement[0]
-                    # Up/down movement corresponds to camera's up vector
-                    world_movement -= up_dir * screen_movement[1]  # Negative for screen-space mapping
+                    world_movement -= up_dir * screen_movement[1]
                     
-                    # Scale by sensitivity factor
-                    movement = world_movement * self.movement_sensitivity * 10  # Increased for mouse
+                    movement = world_movement * self.movement_sensitivity * 10
                     
-                    # Apply movement to selected vertices
+                    # Apply movement to vertices
                     vertices = np.asarray(self.mesh.vertices)
                     before_positions = {idx: vertices[idx].copy() for idx in self.selected_vertices}
                     
                     for idx in self.selected_vertices:
                         vertices[idx] += movement
                     
-                    # Save positions for undo history
                     after_positions = {idx: vertices[idx].copy() for idx in self.selected_vertices}
                     self.vertex_movement_history.append((before_positions, after_positions))
                     
-                    # Update mesh
                     self.mesh.vertices = o3d.utility.Vector3dVector(vertices)
                     self.mesh.compute_vertex_normals()
                     self.mesh_modified = True
-                    
-                    # Update visualization
                     self.update_mesh_visualization()
-                
-                # Update last position
+                    
                 self.last_position = (x, y)
         
-        # End lasso selection or rotation
+        # Handle mouse button release events
         elif event == cv2.EVENT_LBUTTONUP:
             if self.mode == "lasso" and len(self.lasso_points) > 2 and y > self.menu_height:
-                # Add the starting point to close the lasso with smoothing
+                # Close the lasso with smooth interpolation
                 if self.lasso_start_point:
                     last_point = self.lasso_points[-1]
                     dx = self.lasso_start_point[0] - last_point[0]
                     dy = self.lasso_start_point[1] - last_point[1]
                     dist_to_start = np.sqrt(dx**2 + dy**2)
                     
-                    # Add intermediate points for a smoother curve
                     steps = max(3, min(10, int(dist_to_start / self.lasso_min_distance)))
                     for i in range(1, steps):
                         t = i / steps
@@ -874,30 +867,22 @@ class IntegratedMeshEditor:
             self.is_dragging = False
             self.last_position = None
             
-        # End right-button dragging
         elif event == cv2.EVENT_RBUTTONUP:
             self.is_right_dragging = False
             self.last_position = None
         
-        # Zoom with mouse wheel - Fix for different platforms
+        # Handle mouse wheel for zooming
         elif event == cv2.EVENT_MOUSEWHEEL:
-            # For Windows
-            delta = np.sign(flags >> 16)  # Extract vertical wheel motion
-            self.zoom_factor = 1.0 + self.zoom_sensitivity
-            if delta > 0:
-                self.view_control.scale(self.zoom_factor)
-            else:
-                self.view_control.scale(1.0 / self.zoom_factor)
+            delta = np.sign(flags >> 16)
+            factor = 1.1 if delta > 0 else 0.9
+            self.view_control.scale(factor)
             self.update_mesh_visualization()
-        elif event == cv2.EVENT_MOUSEHWHEEL:  
-            # For macOS
-            delta = -np.sign(flags)  # Different direction on macOS
-            self.zoom_factor = 1.0 + self.zoom_sensitivity
-            if delta > 0:
-                self.view_control.scale(self.zoom_factor)
-            else:
-                self.view_control.scale(1.0 / self.zoom_factor)
+        elif event == cv2.EVENT_MOUSEHWHEEL:
+            delta = -np.sign(flags)
+            factor = 1.1 if delta > 0 else 0.9
+            self.view_control.scale(factor)
             self.update_mesh_visualization()
+    
     
     def process_lasso_selection(self):
         """Process the lasso selection to select vertices."""
@@ -1117,6 +1102,7 @@ class IntegratedMeshEditor:
                 
                 # Get the rendered mesh image
                 color_image = self.vis.capture_screen_float_buffer(True)
+                self.refresh_rendering()
                 if color_image is None:
                     continue
                 
@@ -1179,10 +1165,13 @@ class IntegratedMeshEditor:
                         self.set_lasso_mode()
                 elif key == ord('f'):
                     self.set_front_view()
+                    self.refresh_rendering()
                 elif key == ord('t'):
                     self.set_top_view()
+                    self.refresh_rendering()
                 elif key == ord('d'):
                     self.set_side_view()
+                    self.refresh_rendering()
                 elif key == ord('h'):
                     self.toggle_help()
                 elif key == ord('m'):
