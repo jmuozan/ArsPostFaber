@@ -22,6 +22,7 @@ namespace crft
         private Mesh _lastEditedMesh = null;
         private int _deviceIndex = 0;
         private bool _previousEnableState = false;
+        private bool _keepTempFiles = false; // Set to false to delete temp files after use
         
         public MeshEditorComponent()
           : base("Mesh Editor", "MeshEdit",
@@ -68,24 +69,51 @@ namespace crft
                 // Save input mesh to temporary file
                 SaveMeshToStl(inputMesh, _tempInputPath);
                 
+                // Clear previous messages
+                
                 // Start the mesh editor
                 StartMeshEditor();
+                
+                // Set message to indicate active editing
+                this.Message = "Editing";
             }
             else if (!enable && _isProcessing)
             {
                 // Stop the mesh editor
                 StopMeshEditor();
+                
+                // Reset component phase
+                this.Message = "Idle";
             }
             
             // Check output
             if (_lastEditedMesh != null)
             {
+                // Set edited mesh as output
                 DA.SetData(0, _lastEditedMesh);
+                
+                // Add info message when not editing
+                if (!_isProcessing)
+                {
+                    this.Message = "Edited";
+                }
             }
             else
             {
                 // If we don't have an edited mesh yet, pass through the input mesh
                 DA.SetData(0, inputMesh);
+                
+                // Set appropriate message when not in edit mode
+                if (!_isProcessing)
+                {
+                    this.Message = "Original";
+                }
+            }
+            
+            // Set appropriate icons/colors based on state
+            if (_isProcessing)
+            {
+                this.Message = "Editing";
             }
         }
         
@@ -100,16 +128,66 @@ namespace crft
                     Directory.CreateDirectory(directory);
                 }
                 
-                // Create a 3DM file
-                Rhino.FileIO.File3dm file = new Rhino.FileIO.File3dm();
-                file.Objects.AddMesh(mesh);
-                
-                bool success = file.Write(filePath, 7); // Version 7 for newest format
-                
-                if (!success)
+                // Save as an ASCII STL file that Open3D can read
+                using (StreamWriter writer = new StreamWriter(filePath))
                 {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Failed to save mesh to {filePath}");
+                    // Write STL header
+                    writer.WriteLine("solid RHINOMESH");
+                    
+                    // Get mesh components
+                    MeshFaceList faces = mesh.Faces;
+                    MeshVertexList vertices = mesh.Vertices;
+                    
+                    // Write each face
+                    for (int i = 0; i < faces.Count; i++)
+                    {
+                        // Get face vertices
+                        Point3f v1 = vertices[faces[i].A];
+                        Point3f v2 = vertices[faces[i].B];
+                        Point3f v3 = vertices[faces[i].C];
+                        
+                        // Compute normal
+                        Vector3d vec1 = new Vector3d(v2.X - v1.X, v2.Y - v1.Y, v2.Z - v1.Z);
+                        Vector3d vec2 = new Vector3d(v3.X - v1.X, v3.Y - v1.Y, v3.Z - v1.Z);
+                        Vector3d normal = Vector3d.CrossProduct(vec1, vec2);
+                        normal.Unitize();
+                        
+                        // Write facet
+                        writer.WriteLine($"  facet normal {normal.X} {normal.Y} {normal.Z}");
+                        writer.WriteLine("    outer loop");
+                        writer.WriteLine($"      vertex {v1.X} {v1.Y} {v1.Z}");
+                        writer.WriteLine($"      vertex {v2.X} {v2.Y} {v2.Z}");
+                        writer.WriteLine($"      vertex {v3.X} {v3.Y} {v3.Z}");
+                        writer.WriteLine("    endloop");
+                        writer.WriteLine("  endfacet");
+                        
+                        // Handle quad faces by splitting into triangles
+                        if (faces[i].IsQuad)
+                        {
+                            Point3f v4 = vertices[faces[i].D];
+                            
+                            // Compute normal for second triangle
+                            vec1 = new Vector3d(v3.X - v1.X, v3.Y - v1.Y, v3.Z - v1.Z);
+                            vec2 = new Vector3d(v4.X - v1.X, v4.Y - v1.Y, v4.Z - v1.Z);
+                            normal = Vector3d.CrossProduct(vec1, vec2);
+                            normal.Unitize();
+                            
+                            // Write second triangle
+                            writer.WriteLine($"  facet normal {normal.X} {normal.Y} {normal.Z}");
+                            writer.WriteLine("    outer loop");
+                            writer.WriteLine($"      vertex {v1.X} {v1.Y} {v1.Z}");
+                            writer.WriteLine($"      vertex {v3.X} {v3.Y} {v3.Z}");
+                            writer.WriteLine($"      vertex {v4.X} {v4.Y} {v4.Z}");
+                            writer.WriteLine("    endloop");
+                            writer.WriteLine("  endfacet");
+                        }
+                    }
+                    
+                    // Write STL footer
+                    writer.WriteLine("endsolid RHINOMESH");
                 }
+                
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Saved mesh with {mesh.Faces.Count} faces to STL file");
             }
             catch (Exception ex)
             {
@@ -183,66 +261,84 @@ namespace crft
                 // Mark as processing
                 _isProcessing = true;
                 
-                // Create a simplified Python script that just runs the original script
-                string pythonLauncherScript = @"
-import sys
-import os
-import argparse
-import subprocess
-
-def parse_args():
-    parser = argparse.ArgumentParser(description='Mesh Editor Launcher')
-    parser.add_argument('--input', type=str, required=True, help='Path to input mesh file')
-    parser.add_argument('--output', type=str, required=True, help='Path to output mesh file')
-    parser.add_argument('--device', type=int, default=0, help='Camera device index')
-    return parser.parse_args()
-
-def main():
-    args = parse_args()
-    # Find the original meshedit.py script
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    home_dir = os.path.expanduser('~')
-    possible_paths = [
-        os.path.join(script_dir, 'meshedit.py'),
-        os.path.join(home_dir, 'Desktop', 'crft', 'meshedit.py'),
-        os.path.join(os.path.dirname(script_dir), 'meshedit.py')
-    ]
-    
-    script_path = None
-    for path in possible_paths:
-        if os.path.exists(path):
-            script_path = path
-            break
-    
-    if script_path is None:
-        print('Error: Could not find meshedit.py script')
-        sys.exit(1)
-    
-    # Launch the original script with the arguments
-    cmd = [sys.executable, script_path, 
-           '--input', args.input, 
-           '--output', args.output, 
-           '--device', str(args.device)]
-    
-    print('Launching: ' + ' '.join(cmd))
-    subprocess.run(cmd)
-
-if __name__ == '__main__':
-    main()
-";
-
-                // Create temporary directory and script file
-                string tempScriptDir = Path.Combine(Path.GetTempPath(), $"meshedit_{Guid.NewGuid()}");
-                Directory.CreateDirectory(tempScriptDir);
-                string tempScriptPath = Path.Combine(tempScriptDir, "meshedit_launcher.py");
+                // Create a unique temporary directory for our Python scripts
+                string scriptTempDir = Path.Combine(Path.GetTempPath(), $"meshedit_{Guid.NewGuid()}");
+                Directory.CreateDirectory(scriptTempDir);
                 
-                // Write the script to the temporary file
-                File.WriteAllText(tempScriptPath, pythonLauncherScript);
+                // Create a very simple Python script that runs meshedit.py directly
+                string launcherPath = Path.Combine(scriptTempDir, "mesh_launcher.py");
                 
-                // Create an AppleScript to open Terminal and run the mesh editor
+                using (StreamWriter writer = new StreamWriter(launcherPath))
+                {
+                    writer.WriteLine("#!/usr/bin/env python3");
+                    writer.WriteLine("import sys");
+                    writer.WriteLine("import os");
+                    writer.WriteLine("import subprocess");
+                    writer.WriteLine("");
+                    writer.WriteLine("# Find meshedit.py");
+                    writer.WriteLine("paths = [");
+                    writer.WriteLine("    os.path.join(os.path.expanduser('~'), 'Desktop', 'crft', 'meshedit.py'),");
+                    writer.WriteLine("    os.path.join(os.path.dirname(os.path.dirname(__file__)), 'meshedit.py')");
+                    writer.WriteLine("]");
+                    writer.WriteLine("");
+                    writer.WriteLine("script_path = None");
+                    writer.WriteLine("for path in paths:");
+                    writer.WriteLine("    if os.path.exists(path):");
+                    writer.WriteLine("        script_path = path");
+                    writer.WriteLine("        break");
+                    writer.WriteLine("");
+                    writer.WriteLine("if not script_path:");
+                    writer.WriteLine("    print('Error: Could not find meshedit.py')");
+                    writer.WriteLine("    sys.exit(1)");
+                    writer.WriteLine("");
+                    writer.WriteLine("# Run the original script directly");
+                    writer.WriteLine("cmd = [sys.executable, script_path,");
+                    writer.WriteLine($"       '--input', '{_tempInputPath}',");
+                    writer.WriteLine($"       '--output', '{_tempOutputPath}',");
+                    writer.WriteLine($"       '--device', '{_deviceIndex}']");
+                    writer.WriteLine("");
+                    writer.WriteLine("print('Running meshedit.py with command:', ' '.join(cmd))");
+                    writer.WriteLine("subprocess.run(cmd)");
+                }
+                
+                // Create a simple script to close the editor using command line (no tkinter)
+                string closeButtonPath = Path.Combine(scriptTempDir, "close_button.py");
+                
+                using (StreamWriter writer = new StreamWriter(closeButtonPath))
+                {
+                    writer.WriteLine("#!/usr/bin/env python3");
+                    writer.WriteLine("import subprocess");
+                    writer.WriteLine("import time");
+                    writer.WriteLine("import os");
+                    writer.WriteLine("");
+                    writer.WriteLine("# Print instructions for user");
+                    writer.WriteLine("print('\\n\\033[1;32m===== MESH EDITOR CONTROL =====\\033[0m')");
+                    writer.WriteLine("print('\\033[1;36mPress Ctrl+C to save and close the mesh editor\\033[0m')");
+                    writer.WriteLine("print('\\033[1;33mOr press S key in the mesh editor window to save directly\\033[0m\\n')");
+                    writer.WriteLine("");
+                    writer.WriteLine("# Function to save and close");
+                    writer.WriteLine("def save_and_close():");
+                    writer.WriteLine("    print('\\n\\033[1;32mSaving and closing mesh editor...\\033[0m')");
+                    writer.WriteLine("    subprocess.run(['pkill', '-f', 'meshedit.py'])");
+                    writer.WriteLine("    print('\\033[1;32mMesh editor closed! You can close this window.\\033[0m\\n')");
+                    writer.WriteLine("");
+                    writer.WriteLine("# Wait for Ctrl+C");
+                    writer.WriteLine("try:");
+                    writer.WriteLine("    # Main loop - wait for Ctrl+C");
+                    writer.WriteLine("    while True:");
+                    writer.WriteLine("        time.sleep(0.5)");
+                    writer.WriteLine("except KeyboardInterrupt:");
+                    writer.WriteLine("    # User pressed Ctrl+C");
+                    writer.WriteLine("    save_and_close()");
+                }
+                
+                // Create an AppleScript to open two Terminal windows:
+                // 1. One for the mesh editor
+                // 2. One for the close controller
                 string appleScript = $@"
 tell application ""Terminal""
-    do script ""cd '{tempScriptDir}' && python3 meshedit_launcher.py --input '{_tempInputPath}' --output '{_tempOutputPath}' --device {_deviceIndex}""
+    do script ""cd '{scriptTempDir}' && python3 mesh_launcher.py""
+    do script ""cd '{scriptTempDir}' && python3 close_button.py""
     activate
 end tell
 ";
@@ -264,7 +360,7 @@ end tell
                 _monitorTask = Task.Run(() => MonitorOutputFile(_cancellationSource.Token));
                 
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, 
-                    "Mesh editor has been launched. Edit the mesh in the window and press 'S' to save changes.");
+                    "Mesh editor has been launched. Edit the mesh in the window and click 'Save & Close Editor' to finish.");
             }
             catch (Exception ex)
             {
@@ -312,7 +408,7 @@ end tell
                 {
                     Process killProcess = new Process();
                     killProcess.StartInfo.FileName = "pkill";
-                    killProcess.StartInfo.Arguments = "-f meshedit.py";
+                    killProcess.StartInfo.Arguments = "-f meshedit";
                     killProcess.StartInfo.UseShellExecute = false;
                     killProcess.StartInfo.CreateNoWindow = true;
                     
@@ -324,25 +420,55 @@ end tell
                     Debug.WriteLine($"Error running pkill command: {ex.Message}");
                 }
                 
+                // Wait a short moment to ensure file system has synchronized
+                System.Threading.Thread.Sleep(500);
+                
                 // Try to load the final mesh from the output file
                 try
                 {
                     if (File.Exists(_tempOutputPath))
                     {
-                        Mesh finalMesh = LoadMeshFromStl(_tempOutputPath);
-                        if (finalMesh != null)
+                        // Check if the file size is non-zero before trying to load
+                        FileInfo fileInfo = new FileInfo(_tempOutputPath);
+                        if (fileInfo.Length > 0)
                         {
-                            _lastEditedMesh = finalMesh;
-                            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Loaded final edited mesh");
+                            Mesh finalMesh = LoadMeshFromStl(_tempOutputPath);
+                            if (finalMesh != null)
+                            {
+                                _lastEditedMesh = finalMesh;
+                                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Loaded final edited mesh");
+                                
+                                // Force solution update to ensure mesh is displayed
+                                this.OnDisplayExpired(true);
+                            }
+                            else
+                            {
+                                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Could not load edited mesh, it may be corrupted");
+                            }
                         }
+                        else
+                        {
+                            AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Output mesh file exists but is empty");
+                        }
+                    }
+                    else
+                    {
+                        AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "No output mesh file found");
                     }
                 }
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"Error loading final mesh: {ex.Message}");
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Error loading mesh: {ex.Message}");
                 }
                 
                 _isProcessing = false;
+                
+                // Clean up temp files if we have the edited mesh
+                if (_lastEditedMesh != null && !_keepTempFiles)
+                {
+                    CleanupTempFiles();
+                }
             }
             catch (Exception ex)
             {
@@ -360,9 +486,12 @@ end tell
                     if (File.Exists(_tempOutputPath))
                     {
                         FileInfo fileInfo = new FileInfo(_tempOutputPath);
-                        if (fileInfo.LastWriteTime > _lastModifiedTime)
+                        if (fileInfo.LastWriteTime > _lastModifiedTime && fileInfo.Length > 0)
                         {
                             _lastModifiedTime = fileInfo.LastWriteTime;
+                            
+                            // Wait a short moment to ensure file is fully written
+                            Thread.Sleep(100);
                             
                             // Load the mesh from the output file
                             Mesh updatedMesh = LoadMeshFromStl(_tempOutputPath);
@@ -372,12 +501,19 @@ end tell
                                 
                                 // Update the solution
                                 this.OnDisplayExpired(true);
+                                
+                                // Log that mesh was updated
+                                Debug.WriteLine($"Mesh updated from file. Last write time: {fileInfo.LastWriteTime}");
+                            }
+                            else
+                            {
+                                Debug.WriteLine("Failed to load updated mesh");
                             }
                         }
                     }
                     
                     // Wait before checking again
-                    Thread.Sleep(1000); // Check every second
+                    Thread.Sleep(500); // Check every half-second for more responsive updates
                 }
             }
             catch (Exception ex)
@@ -391,24 +527,55 @@ end tell
             StopMeshEditor();
             
             // Clean up temporary files
+            CleanupTempFiles();
+            
+            base.RemovedFromDocument(document);
+        }
+        
+        private void CleanupTempFiles()
+        {
             try
             {
-                if (File.Exists(_tempInputPath))
+                if (!_keepTempFiles)
                 {
-                    File.Delete(_tempInputPath);
+                    // Clean up temp input file
+                    if (File.Exists(_tempInputPath))
+                    {
+                        File.Delete(_tempInputPath);
+                        Debug.WriteLine($"Deleted temporary input file: {_tempInputPath}");
+                    }
+                    
+                    // Clean up temp output file
+                    if (File.Exists(_tempOutputPath))
+                    {
+                        File.Delete(_tempOutputPath);
+                        Debug.WriteLine($"Deleted temporary output file: {_tempOutputPath}");
+                    }
+                    
+                    // Cleanup any temporary directories we created
+                    string tempDir = Path.GetDirectoryName(_tempInputPath);
+                    if (Directory.Exists(tempDir) && tempDir.Contains("meshedit_"))
+                    {
+                        try
+                        {
+                            Directory.Delete(tempDir, true);
+                            Debug.WriteLine($"Deleted temporary directory: {tempDir}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Could not delete temp directory: {ex.Message}");
+                        }
+                    }
                 }
-                
-                if (File.Exists(_tempOutputPath))
+                else
                 {
-                    File.Delete(_tempOutputPath);
+                    Debug.WriteLine("Keeping temporary files as requested");
                 }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error cleaning up temporary files: {ex.Message}");
             }
-            
-            base.RemovedFromDocument(document);
         }
 
         public override void DocumentContextChanged(GH_Document document, GH_DocumentContext context)
@@ -416,6 +583,7 @@ end tell
             if (context == GH_DocumentContext.Close)
             {
                 StopMeshEditor();
+                CleanupTempFiles();
             }
             base.DocumentContextChanged(document, context);
         }
