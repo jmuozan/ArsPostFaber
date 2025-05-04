@@ -3,3 +3,4 @@ bin/Debug/net7.0/runtimes/ios/native/onnxruntime.xcframework/ios-arm64/onnxrunti
 bin/Debug/net7.0/runtimes/ios/native/onnxruntime.xcframework/ios-arm64_x86_64-simulator/onnxruntime.framework/onnxruntime
 __pycache__
 **/.claude/settings.local.json
+Key.txt
