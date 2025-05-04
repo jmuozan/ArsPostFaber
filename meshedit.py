@@ -509,7 +509,13 @@ class MeshEditor:
         
         # ESC - Exit application
         if key == 27:  # ESC
-            print("ESC pressed - exiting application")
+            print("ESC pressed - saving and exiting application")
+            # Save mesh before exit
+            try:
+                if self.mesh_modified:
+                    self.save_mesh()
+            except Exception as e:
+                print(f"Error saving mesh on exit: {e}")
             self.application_running = False
             return
             

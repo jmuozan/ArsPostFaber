@@ -65,7 +65,7 @@ namespace crft
             bool stateChanged = (enable != _previousEnableState);
             _previousEnableState = enable;
             
-            if (enable && !_isProcessing)
+            if (enable && !_isProcessing && stateChanged)
             {
                 // Save input mesh to temporary file
                 SaveMeshToStl(inputMesh, _tempInputPath);
@@ -78,7 +78,7 @@ namespace crft
                 // Set message to indicate active editing
                 this.Message = "Editing";
             }
-            else if (!enable && _isProcessing)
+            else if (!enable && _isProcessing && stateChanged)
             {
                 // Stop the mesh editor
                 StopMeshEditor();
@@ -717,8 +717,8 @@ end tell
                                 _lastEditedMesh = finalMesh;
                                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Loaded final edited mesh");
                                 
-                                // Force solution update to ensure mesh is displayed
-                                this.OnDisplayExpired(true);
+                                // Force component to recompute and display the updated mesh
+                                this.ExpireSolution(true);
                             }
                             else
                             {
@@ -778,8 +778,8 @@ end tell
                             {
                                 _lastEditedMesh = updatedMesh;
                                 
-                                // Update the solution
-                                this.OnDisplayExpired(true);
+                                // Trigger full component recompute to update output mesh preview
+                                this.ExpireSolution(true);
                                 
                                 // Log that mesh was updated
                                 Debug.WriteLine($"Mesh updated from file. Last write time: {fileInfo.LastWriteTime}");
