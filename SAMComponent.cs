@@ -3,6 +3,8 @@ using System.IO;
 using System.Diagnostics;
 using System.Text;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using Grasshopper.Kernel;
 using Rhino.Geometry;
 using Grasshopper.Kernel.Types;
@@ -219,8 +221,34 @@ namespace crft
                     _points = new List<Point3d>();
                     _lastPlyPath = null;
                     
-                    string baseDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-                    string scriptDir = Path.Combine(baseDir, "Desktop", "crft");
+                    // Extract embedded SAM scripts to a temporary folder
+                    string samTempDir = Path.Combine(Path.GetTempPath(), $"sam2_{Guid.NewGuid()}");
+                    Directory.CreateDirectory(samTempDir);
+                    var asm = Assembly.GetExecutingAssembly();
+                    string ns = asm.GetName().Name;
+                    foreach (var resName in asm.GetManifestResourceNames())
+                    {
+                        var prefix = ns + ".scripts.";
+                        if (!resName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        // Compute relative path e.g. 'scripts.segmentanything.file.py'
+                        var relName = resName.Substring(prefix.Length);
+                        var parts = relName.Split('.');
+                        if (parts.Length < 2)
+                            continue;
+                        // Last two parts are filename and extension
+                        string fileName = parts[parts.Length - 2] + "." + parts[parts.Length - 1];
+                        // The preceding parts are subdirectories
+                        string[] folders = parts.Take(parts.Length - 2).ToArray();
+                        string outDir = folders.Length > 0
+                            ? Path.Combine(new[] { samTempDir }.Concat(folders).ToArray())
+                            : samTempDir;
+                        Directory.CreateDirectory(outDir);
+                        using (var resStream = asm.GetManifestResourceStream(resName))
+                        using (var outFile = File.Create(Path.Combine(outDir, fileName)))
+                            resStream.CopyTo(outFile);
+                    }
+                    string scriptDir = samTempDir;
                     string samScript = Path.Combine(scriptDir, "run_sam.sh");
                     
                     if (!File.Exists(samScript))

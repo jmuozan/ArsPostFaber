@@ -2,11 +2,12 @@ using System;
 using System.IO;
 using System.Diagnostics;
 using System.Collections.Generic;
+using Grasshopper.Kernel;
 using System.Threading;
 using System.Threading.Tasks;
-using Grasshopper.Kernel;
 using Rhino.Geometry;
 using Rhino.Geometry.Collections;
+using System.Linq;
 
 namespace crft
 {
@@ -16,15 +17,16 @@ namespace crft
         private Process _editorProcess = null;
         private string _tempInputPath = null;
         private string _tempOutputPath = null;
-        private CancellationTokenSource _cancellationSource = null;
-        private Task _monitorTask = null;
-        private DateTime _lastModifiedTime = DateTime.MinValue;
         private Mesh _lastEditedMesh = null;
         private int _deviceIndex = 0;
         private bool _previousEnableState = false;
         private bool _keepTempFiles = false; // Set to false to delete temp files after use
         private Vector3d _originalMeshCenter = Vector3d.Zero; // store original mesh center for repositioning
         private bool _useBinaryStl = true; // Use binary STL format for better compatibility
+        // Monitor external editor for automatic updates
+        private CancellationTokenSource _cancellationSource = null;
+        private Task _monitorTask = null;
+        private DateTime _lastModifiedTime = DateTime.MinValue;
         
         public MeshEditorComponent()
           : base("Mesh Editor", "MeshEdit",
@@ -529,121 +531,66 @@ namespace crft
                 // Create a unique temporary directory for our Python scripts
                 string scriptTempDir = Path.Combine(Path.GetTempPath(), $"meshedit_{Guid.NewGuid()}");
                 Directory.CreateDirectory(scriptTempDir);
+                // Extract embedded Python resources (gh_edit.py, meshedit.py, hands.py)
+                var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                // Explicitly name resource files so output filenames match expected script names
+                string[] resourceFiles = new[] { "gh_edit.py", "meshedit.py", "hands.py" };
+                var manifestNames = asm.GetManifestResourceNames();
+                foreach (var fileName in resourceFiles)
+                {
+                    var resName = manifestNames
+                        .FirstOrDefault(r => r.EndsWith(fileName, StringComparison.OrdinalIgnoreCase));
+                    if (resName != null)
+                    {
+                        using (var resStream = asm.GetManifestResourceStream(resName))
+                        using (var outFile = File.Create(Path.Combine(scriptTempDir, fileName)))
+                            resStream.CopyTo(outFile);
+                    }
+                }
                 
                 // Create a very simple Python script that runs meshedit.py directly
                 string launcherPath = Path.Combine(scriptTempDir, "mesh_launcher.py");
                 
+                // Write launcher script that runs embedded Python editor
                 using (StreamWriter writer = new StreamWriter(launcherPath))
                 {
                     writer.WriteLine("#!/usr/bin/env python3");
-                    writer.WriteLine("import sys");
-                    writer.WriteLine("import os");
-                    writer.WriteLine("import subprocess");
+                    writer.WriteLine("import sys, os, subprocess");
                     writer.WriteLine("");
-                    writer.WriteLine("# Look for the Grasshopper-specific editor first");
-                    writer.WriteLine("gh_paths = [");
-                    writer.WriteLine("    os.path.join(os.path.expanduser('~'), 'Desktop', 'crft', 'gh_edit.py'),");
-                    writer.WriteLine("    os.path.join(os.path.dirname(os.path.dirname(__file__)), 'gh_edit.py')");
-                    writer.WriteLine("]");
+                    writer.WriteLine("script_dir = os.path.dirname(os.path.realpath(__file__))");
+                    writer.WriteLine($"input_path = r'{_tempInputPath}'");
+                    writer.WriteLine($"output_path = r'{_tempOutputPath}'");
+                    writer.WriteLine($"device = '{_deviceIndex}'");
                     writer.WriteLine("");
-                    writer.WriteLine("# Fallback to standard editor if GH version not found");
-                    writer.WriteLine("standard_paths = [");
-                    writer.WriteLine("    os.path.join(os.path.expanduser('~'), 'Desktop', 'crft', 'meshedit.py'),");
-                    writer.WriteLine("    os.path.join(os.path.dirname(os.path.dirname(__file__)), 'meshedit.py')");
-                    writer.WriteLine("]");
+                    writer.WriteLine("script_path = os.path.join(script_dir, 'gh_edit.py')");
+                    writer.WriteLine("if not os.path.exists(script_path):");
+                    writer.WriteLine("    script_path = os.path.join(script_dir, 'meshedit.py')");
                     writer.WriteLine("");
-                    writer.WriteLine("# First try GH-specific version");
-                    writer.WriteLine("script_path = None");
-                    writer.WriteLine("for path in gh_paths:");
-                    writer.WriteLine("    if os.path.exists(path):");
-                    writer.WriteLine("        script_path = path");
-                    writer.WriteLine("        print(f'Using Grasshopper-optimized editor: {path}')");
-                    writer.WriteLine("        break");
-                    writer.WriteLine("");
-                    writer.WriteLine("# Fall back to standard version if needed");
-                    writer.WriteLine("if not script_path:");
-                    writer.WriteLine("    for path in standard_paths:");
-                    writer.WriteLine("        if os.path.exists(path):");
-                    writer.WriteLine("            script_path = path");
-                    writer.WriteLine("            print(f'Using standard mesh editor: {path}')");
-                    writer.WriteLine("            break");
-                    writer.WriteLine("");
-                    writer.WriteLine("if not script_path:");
-                    writer.WriteLine("    print('Error: Could not find meshedit.py or gh_edit.py')");
-                    writer.WriteLine("    sys.exit(1)");
-                    writer.WriteLine("");
-                    writer.WriteLine("# Run the script");
-                    writer.WriteLine("cmd = [sys.executable, script_path,");
-                    writer.WriteLine($"       '--input', '{_tempInputPath}',");
-                    writer.WriteLine($"       '--output', '{_tempOutputPath}',");
-                    writer.WriteLine($"       '--device', '{_deviceIndex}']");
-                    writer.WriteLine("");
-                    writer.WriteLine("print('Running mesh editor with command:', ' '.join(cmd))");
-                    writer.WriteLine("subprocess.run(cmd)");
+                    writer.WriteLine("cmd = [sys.executable, script_path, '--input', input_path, '--output', output_path, '--device', device]");
+                    writer.WriteLine("print('Running mesh editor with command:', cmd)");
+                    writer.WriteLine("sys.exit(subprocess.call(cmd))");
                 }
                 
-                // Create a simple script to close the editor using command line (no tkinter)
-                string closeButtonPath = Path.Combine(scriptTempDir, "close_button.py");
-                
-                using (StreamWriter writer = new StreamWriter(closeButtonPath))
-                {
-                    writer.WriteLine("#!/usr/bin/env python3");
-                    writer.WriteLine("import subprocess");
-                    writer.WriteLine("import time");
-                    writer.WriteLine("import os");
-                    writer.WriteLine("");
-                    writer.WriteLine("# Print instructions for user");
-                    writer.WriteLine("print('\\n\\033[1;32m===== MESH EDITOR CONTROL =====\\033[0m')");
-                    writer.WriteLine("print('\\033[1;36mPress Ctrl+C to save and close the mesh editor\\033[0m')");
-                    writer.WriteLine("print('\\033[1;33mOr press S key in the mesh editor window to save directly\\033[0m')");
-                    writer.WriteLine("print('\\033[1;31mEdited mesh will be embedded in the Grasshopper component\\033[0m\\n')");
-                    writer.WriteLine("");
-                    writer.WriteLine("# Function to save and close");
-                    writer.WriteLine("def save_and_close():");
-                    writer.WriteLine("    print('\\n\\033[1;32mSaving and closing mesh editor...\\033[0m')");
-                    writer.WriteLine("    subprocess.run(['pkill', '-f', 'meshedit.py'])");
-                    writer.WriteLine("    print('\\033[1;32mMesh editor closed! You can close this window.\\033[0m')");
-                    writer.WriteLine("    print('\\033[1;32mEdited mesh has been embedded in the Grasshopper component.\\033[0m\\n')");
-                    writer.WriteLine("");
-                    writer.WriteLine("# Wait for Ctrl+C");
-                    writer.WriteLine("try:");
-                    writer.WriteLine("    # Main loop - wait for Ctrl+C");
-                    writer.WriteLine("    while True:");
-                    writer.WriteLine("        time.sleep(0.5)");
-                    writer.WriteLine("except KeyboardInterrupt:");
-                    writer.WriteLine("    # User pressed Ctrl+C");
-                    writer.WriteLine("    save_and_close()");
-                }
-                
-                // Create an AppleScript to open two Terminal windows:
-                // 1. One for the mesh editor
-                // 2. One for the close controller
+                // Launch the mesh editor via Terminal
                 string appleScript = $@"
 tell application ""Terminal""
     do script ""cd '{scriptTempDir}' && python3 mesh_launcher.py""
-    do script ""cd '{scriptTempDir}' && python3 close_button.py""
     activate
 end tell
 ";
-                
-                // Save the AppleScript to a temporary file
                 string appleScriptPath = Path.Combine(Path.GetTempPath(), $"run_meshedit_{Guid.NewGuid()}.scpt");
                 File.WriteAllText(appleScriptPath, appleScript);
-                
-                // Run the AppleScript
                 ProcessStartInfo psi = new ProcessStartInfo();
                 psi.FileName = "osascript";
                 psi.Arguments = appleScriptPath;
                 psi.UseShellExecute = false;
-                
-                _editorProcess = Process.Start(psi);
-                
-                // Start monitoring for changes to the output file
+                Process.Start(psi);
+                // Start monitoring for mesh output updates
                 _cancellationSource = new CancellationTokenSource();
+                _lastModifiedTime = DateTime.MinValue;
                 _monitorTask = Task.Run(() => MonitorOutputFile(_cancellationSource.Token));
-                
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, 
-                    "Mesh editor has been launched. Edit the mesh in the window and click 'Save & Close Editor' to finish.");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
+                    "Mesh editor has been launched. Toggle the Enable input off to finish editing.");
             }
             catch (Exception ex)
             {
@@ -656,13 +603,6 @@ end tell
         {
             try
             {
-                // Stop the monitor task
-                if (_cancellationSource != null)
-                {
-                    _cancellationSource.Cancel();
-                    _cancellationSource.Dispose();
-                    _cancellationSource = null;
-                }
                 
                 // Terminate the editor process if it's running
                 if (_editorProcess != null)
@@ -721,9 +661,9 @@ end tell
                                 // Reapply original mesh position (Python editor centers around origin)
                                 finalMesh.Translate(_originalMeshCenter);
                                 _lastEditedMesh = finalMesh;
-                                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Loaded final edited mesh");
-                                // Trigger component recompute to display updated mesh
-                                this.ExpireSolution(true);
+                            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Loaded final edited mesh");
+                            // Trigger solution recompute to embed edited mesh
+                            this.ExpireSolution(true);
                             }
                             else
                             {
@@ -759,42 +699,29 @@ end tell
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Error stopping mesh editor: {ex.Message}");
             }
         }
-        
+    
+        /// <summary>
+        /// Monitor the external editor output file for changes to automatically import the edited mesh.
+        /// </summary>
         private void MonitorOutputFile(CancellationToken token)
         {
             try
             {
                 while (!token.IsCancellationRequested)
                 {
-                    // Check if the output file exists and has been modified
                     if (File.Exists(_tempOutputPath))
                     {
                         FileInfo fileInfo = new FileInfo(_tempOutputPath);
                         if (fileInfo.LastWriteTime > _lastModifiedTime && fileInfo.Length > 0)
                         {
                             _lastModifiedTime = fileInfo.LastWriteTime;
-                            
-                            // Wait a short moment to ensure file is fully written
-                            Thread.Sleep(100);
-                            
-                            // Load the mesh from the output file
-                            Mesh updatedMesh = LoadMeshFromStl(_tempOutputPath);
-                            if (updatedMesh != null)
-                            {
-                                // Mesh was updated; finalize editing and embed result
-                                Debug.WriteLine($"Mesh updated from file. Last write time: {fileInfo.LastWriteTime}");
-                                StopMeshEditor();
-                                return;
-                            }
-                            else
-                            {
-                                Debug.WriteLine("Failed to load updated mesh");
-                            }
+                            Thread.Sleep(100); // ensure file write completion
+                            // Stop editor and load mesh on main thread
+                            Rhino.RhinoApp.InvokeOnUiThread(StopMeshEditor);
+                            return;
                         }
                     }
-                    
-                    // Wait before checking again
-                    Thread.Sleep(500); // Check every half-second for more responsive updates
+                    Thread.Sleep(500);
                 }
             }
             catch (Exception ex)
@@ -802,6 +729,7 @@ end tell
                 Debug.WriteLine($"Error in monitor task: {ex.Message}");
             }
         }
+        
 
         public override void RemovedFromDocument(GH_Document document)
         {
