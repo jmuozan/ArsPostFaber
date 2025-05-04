@@ -1,6 +1,26 @@
-segmentanything/checkpoints
-bin/Debug/net7.0/runtimes/ios/native/onnxruntime.xcframework/ios-arm64/onnxruntime.framework/onnxruntime
-bin/Debug/net7.0/runtimes/ios/native/onnxruntime.xcframework/ios-arm64_x86_64-simulator/onnxruntime.framework/onnxruntime
-__pycache__
-**/.claude/settings.local.json
-Key.txt
+# Ignore build outputs
+/bin/
+/obj/
+*.suo
+*.user
+*.cache
+
+# Ignore Python cache
+__pycache__/
+
+# Ignore backup and support directories
+/backup/
+/Support/
+
+# Ignore residual backups
+*.bak
+
+# Ignore Visual Studio files
+.vs/
+
+# Ignore macOS system files
+.DS_Store
+
+KEY.txt
+
+.claude

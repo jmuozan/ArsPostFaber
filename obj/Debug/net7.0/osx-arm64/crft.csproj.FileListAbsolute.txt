@@ -1,9 +1,3 @@
-/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.csproj.AssemblyReference.cache
-/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.GeneratedMSBuildEditorConfig.editorconfig
-/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.AssemblyInfoInputs.cache
-/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.AssemblyInfo.cs
-/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.csproj.CoreCompileInputs.cache
-/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.sourcelink.json
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/onnxruntime.dll
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/onnxruntime_providers_shared.dll
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/lib/native/libOpenCvSharpExtern.dylib
@@ -19,9 +13,15 @@
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/OpenCvSharp.Extensions.dll
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/libonnxruntime.dylib
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/libOpenCvSharpExtern.dylib
-/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.csproj.Up2Date
+/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.csproj.AssemblyReference.cache
+/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.GeneratedMSBuildEditorConfig.editorconfig
+/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.AssemblyInfoInputs.cache
+/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.AssemblyInfo.cs
+/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.csproj.CoreCompileInputs.cache
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.gha
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/refint/crft.gha
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.pdb
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.genruntimeconfig.cache
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/ref/crft.gha
+/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.sourcelink.json
+/Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.csproj.Up2Date

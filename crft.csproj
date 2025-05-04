@@ -101,4 +101,16 @@
   </ItemGroup>
   -->
 
+  <!-- Embed Mesh Editor Python scripts as embedded resources -->
+  <ItemGroup>
+    <EmbeddedResource Include="scripts\meshedit\gh_edit.py" />
+    <EmbeddedResource Include="scripts\meshedit\meshedit.py" />
+    <EmbeddedResource Include="scripts\meshedit\hands.py" />
+  </ItemGroup>
+  <!-- Embed SAM scripts and segmentanything folder -->
+  <ItemGroup>
+    <EmbeddedResource Include="scripts\run_sam.sh" />
+    <EmbeddedResource Include="scripts\segmentanything\**\*.*" />
+  </ItemGroup>
+
 </Project>
