@@ -23,4 +23,6 @@ __pycache__/
 
 KEY.txt
 
+
+scripts/segmentanything/sam2/utils/__pycache__
 .claude
