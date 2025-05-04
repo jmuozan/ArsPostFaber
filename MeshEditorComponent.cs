@@ -23,6 +23,7 @@ namespace crft
         private int _deviceIndex = 0;
         private bool _previousEnableState = false;
         private bool _keepTempFiles = false; // Set to false to delete temp files after use
+        private Vector3d _originalMeshCenter = Vector3d.Zero; // store original mesh center for repositioning
         private bool _useBinaryStl = true; // Use binary STL format for better compatibility
         
         public MeshEditorComponent()
@@ -67,6 +68,9 @@ namespace crft
             
             if (enable && !_isProcessing && stateChanged)
             {
+                // Record input mesh center so we can reapply after editing
+                var bbox = inputMesh.GetBoundingBox(true);
+                _originalMeshCenter = new Vector3d(bbox.Center.X, bbox.Center.Y, bbox.Center.Z);
                 // Save input mesh to temporary file
                 SaveMeshToStl(inputMesh, _tempInputPath);
                 
@@ -714,10 +718,11 @@ end tell
                             Mesh finalMesh = LoadMeshFromStl(_tempOutputPath);
                             if (finalMesh != null)
                             {
+                                // Reapply original mesh position (Python editor centers around origin)
+                                finalMesh.Translate(_originalMeshCenter);
                                 _lastEditedMesh = finalMesh;
                                 AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Loaded final edited mesh");
-                                
-                                // Force component to recompute and display the updated mesh
+                                // Trigger component recompute to display updated mesh
                                 this.ExpireSolution(true);
                             }
                             else
@@ -776,13 +781,10 @@ end tell
                             Mesh updatedMesh = LoadMeshFromStl(_tempOutputPath);
                             if (updatedMesh != null)
                             {
-                                _lastEditedMesh = updatedMesh;
-                                
-                                // Trigger full component recompute to update output mesh preview
-                                this.ExpireSolution(true);
-                                
-                                // Log that mesh was updated
+                                // Mesh was updated; finalize editing and embed result
                                 Debug.WriteLine($"Mesh updated from file. Last write time: {fileInfo.LastWriteTime}");
+                                StopMeshEditor();
+                                return;
                             }
                             else
                             {
