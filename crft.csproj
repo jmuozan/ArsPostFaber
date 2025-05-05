@@ -1,12 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	
-  <PropertyGroup>
+    <PropertyGroup>
     <!-- Select the framework(s) you wish to target.
         Rhino 6: net45
         Rhino 7: net48
         Rhino 8 Windows: net48, net7.0, net7.0-windows, net7.0-windows10.0.22000.0, etc
         Rhino 8 Mac: net7.0, net7.0-macos, net7.0-macos12.0, etc
     -->
+    <!-- Target only net7.0 (multi-targeting WindowsDesktop causes build errors on macOS) -->
     <TargetFrameworks>net7.0</TargetFrameworks>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <TargetExt>.gha</TargetExt>
@@ -49,6 +50,8 @@
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.16.3" />
     <PackageReference Include="Python.Runtime" Version="2.7.9" />
     <PackageReference Include="System.IO.Ports" Version="7.0.0" />
+    <!-- Cross-platform serial support -->
+    <PackageReference Include="SerialPortStream" Version="2.4.2" />
   </ItemGroup>
   
   <ItemGroup>

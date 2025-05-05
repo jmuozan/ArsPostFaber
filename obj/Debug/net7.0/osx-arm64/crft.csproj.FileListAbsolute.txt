@@ -23,5 +23,9 @@
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.pdb
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.genruntimeconfig.cache
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/ref/crft.gha
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/System.IO.Ports.dll
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/libSystem.IO.Ports.Native.dylib
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/Microsoft.Extensions.Logging.Abstractions.dll
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/RJCP.SerialPortStream.dll
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.sourcelink.json
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.csproj.Up2Date

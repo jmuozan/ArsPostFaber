@@ -44,6 +44,8 @@ namespace crft
             pManager.AddBooleanParameter("Resume", "R", "Resume printing", GH_ParamAccess.item, false);
             pManager.AddBooleanParameter("Stop", "Stop", "Stop printing", GH_ParamAccess.item, false);
             pManager.AddTextParameter("G-Code", "G", "G-code commands to send", GH_ParamAccess.list);
+            // Allow missing G-Code input without error
+            pManager[7].Optional = true;
             pManager.AddTextParameter("Command", "Cmd", "Single command to send", GH_ParamAccess.item, "");
             pManager.AddBooleanParameter("Send Command", "Send", "Send the single command", GH_ParamAccess.item, false);
             pManager.AddBooleanParameter("Home", "H", "Home all axes (G28)", GH_ParamAccess.item, false);
@@ -255,6 +257,8 @@ namespace crft
             DA.SetData("Paused", isRunning && isPaused);
             DA.SetDataList("Response", responseLog);
             DA.SetData("Status", status);
+            // Output last serial port event (sent/received)
+            DA.SetData("PortEvent", lastEvent);
         }
 
         private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
