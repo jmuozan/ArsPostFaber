@@ -6,6 +6,8 @@ using System.Linq;
 using System.Threading;
 using Grasshopper;
 using Grasshopper.Kernel;
+using Grasshopper.Kernel.Special;
+using Grasshopper.Kernel.Types;
 using Grasshopper.Kernel.Data;
 using Rhino.Geometry;
 
@@ -17,6 +19,10 @@ namespace crft
         private Thread communicationThread;
         private bool isRunning = false;
         private bool isPaused = false;
+        private string lastPortName = string.Empty;
+        private bool lastConnect = false;
+        private string lastEvent = string.Empty;
+        private bool prevHome = false;
         private Queue<string> commandQueue = new Queue<string>();
         private List<string> responseLog = new List<string>();
         private int maxLogEntries = 100;
@@ -40,6 +46,7 @@ namespace crft
             pManager.AddTextParameter("G-Code", "G", "G-code commands to send", GH_ParamAccess.list);
             pManager.AddTextParameter("Command", "Cmd", "Single command to send", GH_ParamAccess.item, "");
             pManager.AddBooleanParameter("Send Command", "Send", "Send the single command", GH_ParamAccess.item, false);
+            pManager.AddBooleanParameter("Home", "H", "Home all axes (G28)", GH_ParamAccess.item, false);
         }
 
         protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
@@ -49,6 +56,7 @@ namespace crft
             pManager.AddBooleanParameter("Paused", "Psd", "True if printing is paused", GH_ParamAccess.item);
             pManager.AddTextParameter("Response", "Res", "Response from printer", GH_ParamAccess.list);
             pManager.AddTextParameter("Status", "Sts", "Current status information", GH_ParamAccess.item);
+            pManager.AddTextParameter("PortEvent", "Evt", "Last serial port event (sent/received)", GH_ParamAccess.item);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -64,6 +72,7 @@ namespace crft
             List<string> gcode = new List<string>();
             string command = "";
             bool sendCommand = false;
+            bool home = false;
 
             // Get input data
             DA.GetData("Port", ref portName);
@@ -76,6 +85,7 @@ namespace crft
             DA.GetDataList("G-Code", gcode);
             DA.GetData("Command", ref command);
             DA.GetData("Send Command", ref sendCommand);
+            DA.GetData("Home", ref home);
 
             // Check connection status
             bool isConnected = (serialPort != null && serialPort.IsOpen);
@@ -232,6 +242,14 @@ namespace crft
             }
 
             // Set outputs
+            // Handle direct home command on rising edge
+            if (home && !prevHome && isConnected)
+            {
+                SendImmediate("G28");
+                AddLogEntry("Sent home command (G28)");
+            }
+            prevHome = home;
+            
             DA.SetData("Connected", isConnected);
             DA.SetData("Printing", isRunning && !isPaused);
             DA.SetData("Paused", isRunning && isPaused);
@@ -347,110 +365,70 @@ namespace crft
 
         private void AddLogEntry(string entry)
         {
+            // Track last event for output
+            lastEvent = entry;
             lock (responseLog)
             {
-                responseLog.Add($"[{DateTime.Now.ToString("HH:mm:ss")}] {entry}");
-                
+                responseLog.Add($"[{DateTime.Now:HH:mm:ss}] {entry}");
                 // Limit log size
                 while (responseLog.Count > maxLogEntries)
-                {
                     responseLog.RemoveAt(0);
-                }
             }
         }
 
-        public override void AppendAdditionalMenuItems(System.Windows.Forms.ToolStripDropDown menu)
+        // AppendAdditionalMenuItems has been removed. Port selection handled via dropdown parameter and refresh button.
+        
+        // Static helper to find PortParam connected to this component
+        private static bool IsConnected(GH_Component component, out PortParam portParam)
         {
-            base.AppendAdditionalMenuItems(menu);
-            
-            // Add menu items for port selection
-            System.Windows.Forms.ToolStripMenuItem portSubMenu = new System.Windows.Forms.ToolStripMenuItem("Select Port");
-            menu.Items.Add(portSubMenu);
-            
-            // Get available ports
-            string[] ports = SerialPort.GetPortNames();
-            if (ports.Length == 0)
+            var sources = component.Params.Input[0].Sources;
+            portParam = sources.OfType<PortParam>().FirstOrDefault();
+            return portParam != null;
+        }
+
+        // Create the port dropdown if none exists
+        private static bool CreateIfEmpty(GH_Document document, GH_Component component, string selected = null)
+        {
+            var inputParam = component.Params.Input[0]; // "Port" parameter
+            if (inputParam.SourceCount > 0)
+                return false;
+            var portParam = new PortParam();
+            if (selected != null)
             {
-                System.Windows.Forms.ToolStripMenuItem noPortsItem = new System.Windows.Forms.ToolStripMenuItem("No ports available");
-                noPortsItem.Enabled = false;
-                portSubMenu.DropDownItems.Add(noPortsItem);
+                var selectedItem = new GH_ValueListItem(selected, $"\"{selected}\"");
+                selectedItem.Selected = true;
+                portParam.ListItems.Add(selectedItem);
             }
-            else
+            portParam.Update();
+            // Position parameter left of component
+            var pivot = component.Attributes.Pivot;
+            portParam.Attributes.Pivot = new System.Drawing.PointF(pivot.X - 240, pivot.Y - 21);
+            document.AddObject(portParam, false);
+            inputParam.AddSource(portParam);
+            return true;
+        }
+
+        // Called when component is added to canvas
+        public override void AddedToDocument(GH_Document document)
+        {
+            base.AddedToDocument(document);
+            CreateIfEmpty(document, this);
+        }
+
+        // Replace attributes to include a refresh button
+        public override void CreateAttributes()
+        {
+            m_attributes = new ComponentButton(this, "Refresh Ports", RefreshPorts);
+        }
+
+        // Refresh the dropdown menu
+        private void RefreshPorts()
+        {
+            if (IsConnected(this, out var portParam))
             {
-                foreach (string port in ports)
-                {
-                    System.Windows.Forms.ToolStripMenuItem portItem = new System.Windows.Forms.ToolStripMenuItem(port);
-                    portItem.Click += (sender, e) => 
-                    {
-                        // Get current inputs
-                        IGH_Component component = this;
-                        
-                        // Set the port name
-                        IGH_Param param = component.Params.Input[0]; // "Port" parameter
-                        if (param != null && param.Sources.Count == 0) // Only set if not connected
-                        {
-                            // Create a persistent data item
-                            Grasshopper.Kernel.Types.GH_String portName = new Grasshopper.Kernel.Types.GH_String(port);
-                            param.ClearData();
-                            param.AddVolatileData(new GH_Path(0), 0, portName);
-                            
-                            // Force solution
-                            component.ExpireSolution(true);
-                        }
-                    };
-                    portSubMenu.DropDownItems.Add(portItem);
-                }
+                portParam.Update();
+                portParam.ExpireSolution(true);
             }
-            
-            // Add a separator
-            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-            
-            // Add common baud rates
-            System.Windows.Forms.ToolStripMenuItem baudRateSubMenu = new System.Windows.Forms.ToolStripMenuItem("Baud Rate");
-            menu.Items.Add(baudRateSubMenu);
-            
-            int[] baudRates = new int[] { 9600, 19200, 38400, 57600, 115200, 250000 };
-            foreach (int baudRate in baudRates)
-            {
-                System.Windows.Forms.ToolStripMenuItem baudRateItem = new System.Windows.Forms.ToolStripMenuItem(baudRate.ToString());
-                baudRateItem.Click += (sender, e) =>
-                {
-                    // Get current inputs
-                    IGH_Component component = this;
-                    
-                    // Set the baud rate
-                    IGH_Param param = component.Params.Input[1]; // "Baud Rate" parameter
-                    if (param != null && param.Sources.Count == 0) // Only set if not connected
-                    {
-                        // Create a persistent data item
-                        Grasshopper.Kernel.Types.GH_Integer baudRateValue = new Grasshopper.Kernel.Types.GH_Integer(baudRate);
-                        param.ClearData();
-                        param.AddVolatileData(new GH_Path(0), 0, baudRateValue);
-                        
-                        // Force solution
-                        component.ExpireSolution(true);
-                    }
-                };
-                baudRateSubMenu.DropDownItems.Add(baudRateItem);
-            }
-            
-            // Add a separator
-            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-            
-            // Add clear log menu item
-            System.Windows.Forms.ToolStripMenuItem clearLogItem = new System.Windows.Forms.ToolStripMenuItem("Clear Log");
-            clearLogItem.Click += (sender, e) =>
-            {
-                lock (responseLog)
-                {
-                    responseLog.Clear();
-                    AddLogEntry("Log cleared");
-                }
-                
-                // Force solution
-                ExpireSolution(true);
-            };
-            menu.Items.Add(clearLogItem);
         }
 
         protected override void BeforeSolveInstance()
@@ -459,37 +437,30 @@ namespace crft
             base.BeforeSolveInstance();
         }
 
+        // Clean up and remove port dropdown when component is removed
         public override void RemovedFromDocument(GH_Document document)
         {
-            // Clean up when component is removed
+            // Original cleanup
             try
             {
-                // Stop communication thread
                 isRunning = false;
                 isPaused = false;
-                
-                // Wait for thread to terminate
                 if (communicationThread != null && communicationThread.IsAlive)
                 {
                     communicationThread.Join(2000);
                     if (communicationThread.IsAlive)
-                    {
                         communicationThread.Abort();
-                    }
                 }
-                
-                // Close serial connection
                 if (serialPort != null && serialPort.IsOpen)
-                {
                     serialPort.Close();
-                }
             }
             catch (Exception ex)
             {
-                // Not much we can do here except log
                 System.Diagnostics.Debug.WriteLine($"Error during cleanup: {ex.Message}");
             }
-            
+            // Remove dropdown parameter
+            if (IsConnected(this, out var portParam))
+                document.RemoveObject(portParam, false);
             base.RemovedFromDocument(document);
         }
 
