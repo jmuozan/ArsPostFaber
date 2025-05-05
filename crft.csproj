@@ -48,6 +48,7 @@
     <PackageReference Include="OpenCvSharp4.runtime.osx.10.15-universal" Version="4.7.0.20230224" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.16.3" />
     <PackageReference Include="Python.Runtime" Version="2.7.9" />
+    <PackageReference Include="System.IO.Ports" Version="7.0.0" />
   </ItemGroup>
   
   <ItemGroup>

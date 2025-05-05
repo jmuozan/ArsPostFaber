@@ -51,3 +51,4 @@ See the `LICENSE` file for details.
 - [ ] local llm implementation???
 - [ ] live connection to 3d printer
 
+- [ ] Program simulation
