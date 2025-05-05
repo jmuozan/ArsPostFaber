@@ -1,8 +1,9 @@
 using System;
 using System.Windows.Forms;
 using System.Collections.Generic;
-using System.IO.Ports;
+using System.Runtime.InteropServices;
 using System.Linq;
+using System.IO;
 using System.Threading;
 using Grasshopper;
 using Grasshopper.Kernel;
@@ -15,7 +16,7 @@ namespace crft
 {
     public class SerialControlComponent : GH_Component
     {
-        private SerialPort serialPort;
+        private ISerialPort serialPort;
         private Thread communicationThread;
         private bool isRunning = false;
         private bool isPaused = false;
@@ -107,16 +108,21 @@ namespace crft
                         serialPort.Close();
                     }
 
-                    // Create new serial connection
-                    serialPort = new SerialPort(portName, baudRate)
+                    // Create new serial connection (cross-platform wrapper)
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
-                        ReadTimeout = 500,
-                        WriteTimeout = 500,
-                        DtrEnable = true,
-                        RtsEnable = true
-                    };
-
-                    serialPort.DataReceived += SerialPort_DataReceived;
+                        serialPort = new WindowsSerialPort(portName, baudRate);
+                    }
+                    else
+                    {
+                        // Ensure full device path on Unix-like systems
+                        string devicePath = portName.StartsWith("/")
+                            ? portName
+                            : Path.Combine("/dev", portName);
+                        serialPort = new UnixSerialPort(devicePath, baudRate);
+                    }
+                    // Log incoming data
+                    serialPort.DataReceived += data => AddLogEntry($"< {data}");
                     serialPort.Open();
 
                     // Wait for printer to initialize
@@ -261,21 +267,6 @@ namespace crft
             DA.SetData("PortEvent", lastEvent);
         }
 
-        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
-        {
-            try
-            {
-                if (serialPort != null && serialPort.IsOpen)
-                {
-                    string data = serialPort.ReadLine();
-                    AddLogEntry($"< {data}");
-                }
-            }
-            catch (Exception ex)
-            {
-                AddLogEntry($"Read error: {ex.Message}");
-            }
-        }
 
         private void CommunicationLoop()
         {
