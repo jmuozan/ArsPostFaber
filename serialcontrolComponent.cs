@@ -68,10 +68,15 @@ namespace crft
                 try
                 {
                     // Initialize cross-platform serial port
+                    // Windows: use SerialPortStream (RJCP)
+                    // Unix-like (including macOS): use UnixSerialPort (stty + FileStream)
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    {
                         _serialPort = new WindowsSerialPort(portName, baudRate);
+                    }
                     else
                     {
+                        // On Unix/macOS use file-stream implementation
                         string device = portName.StartsWith("/") ? portName : Path.Combine("/dev", portName);
                         _serialPort = new UnixSerialPort(device, baudRate);
                     }
@@ -82,7 +87,10 @@ namespace crft
                         _lastEvent = $"Received: {data}";
                     };
                     _serialPort.Open();
+                    // Clear any stray data and send initial handshake to reset line numbers
                     _serialPort.ClearBuffers();
+                    _serialPort.WriteLine("M110 N0");  // Reset line numbering
+                    Thread.Sleep(100);                  // Wait for printer to process
                     _lastEvent = $"Connected to {portName}";
                 }
                 catch (Exception ex)
@@ -107,11 +115,13 @@ namespace crft
                 {
                     try
                     {
-                        _responseLog.Clear();
-                        _serialPort.ClearBuffers();
+                        // Send handshake to reset line numbering before command
+                        _serialPort.WriteLine("M110 N0");
+                        Thread.Sleep(100);
+                        // Send the G-code command
                         _serialPort.WriteLine(command);
                         _lastEvent = $"Sent: {command}";
-                        // Allow time for response
+                        // Allow time for printer to respond
                         Thread.Sleep(200);
                     }
                     catch (Exception ex)

@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Ports;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -206,6 +207,81 @@ namespace crft
             try
             {
                 if (_port != null && _port.IsOpen)
+                {
+                    _port.DiscardInBuffer();
+                    _port.DiscardOutBuffer();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error clearing buffers: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Wrapper for .NET System.IO.Ports.SerialPort for cross-platform communications (e.g., macOS).
+    /// </summary>
+    internal class DotNetSerialPort : ISerialPort
+    {
+        private readonly SerialPort _port;
+        public bool IsOpen => _port != null && _port.IsOpen;
+        public event Action<string> DataReceived;
+
+        public DotNetSerialPort(string portPath, int baudRate)
+        {
+            _port = new SerialPort(portPath, baudRate, System.IO.Ports.Parity.None, 8, System.IO.Ports.StopBits.One)
+            {
+                Handshake = System.IO.Ports.Handshake.None,
+                NewLine = "\r\n",
+                ReadTimeout = 500,
+                WriteTimeout = 500
+            };
+            _port.DataReceived += OnDataReceived;
+        }
+
+        private void OnDataReceived(object sender, System.IO.Ports.SerialDataReceivedEventArgs e)
+        {
+            try
+            {
+                while (_port.BytesToRead > 0)
+                {
+                    string line = _port.ReadLine();
+                    if (!string.IsNullOrWhiteSpace(line))
+                        DataReceived?.Invoke(line.Trim());
+                }
+            }
+            catch (TimeoutException) { }
+            catch (Exception) { }
+        }
+
+        public void Open()
+        {
+            _port.Open();
+            Thread.Sleep(300);
+        }
+
+        public void Close()
+        {
+            try { _port.Close(); } catch { }
+        }
+
+        public void WriteLine(string line)
+        {
+            if (!_port.IsOpen) return;
+            if (!line.EndsWith("\r\n"))
+                line = line.TrimEnd() + "\r\n";
+            _port.Write(line);
+            try { _port.BaseStream.Flush(); } catch { }
+            var bytes = Encoding.ASCII.GetBytes(line);
+            Debug.WriteLine($"Sent bytes: {BitConverter.ToString(bytes)}");
+        }
+
+        public void ClearBuffers()
+        {
+            try
+            {
+                if (_port.IsOpen)
                 {
                     _port.DiscardInBuffer();
                     _port.DiscardOutBuffer();

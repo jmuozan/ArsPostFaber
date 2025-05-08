@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyDescriptionAttribute("Description of crft")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0+5187d3285fb2b1468f17268a94922d79bc556a21")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0+22f86b0053699fcbf2d605eebe678bae85a136dc")]
 [assembly: System.Reflection.AssemblyProductAttribute("crft")]
 [assembly: System.Reflection.AssemblyTitleAttribute("crft")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
