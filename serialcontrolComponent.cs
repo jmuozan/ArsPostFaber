@@ -17,6 +17,8 @@ namespace crft
         private readonly List<string> _responseLog = new List<string>();
         private string _lastEvent;
         private PortParam _portParam;
+        // Playback state: true if printing is resumed, false if paused
+        private bool _isPlaying;
 
         public SerialControlComponent()
           : base("Serial Control", "SerialControl",
@@ -138,6 +140,38 @@ namespace crft
 
             DA.SetDataList("Response", _responseLog);
             DA.SetData("PortEvent", _lastEvent);
+        }
+        /// <summary>
+        /// Add custom UI button under the component for playback control
+        /// </summary>
+        public override void CreateAttributes()
+        {
+            // Play/pause toggle button (▶ play, ⏸ pause)
+            m_attributes = new ComponentButton(this, () => _isPlaying ? "⏸" : "▶", ToggleForm);
+        }
+        /// <summary>
+        /// Handle button click: toggle playback form (stub)
+        /// </summary>
+        private void ToggleForm()
+        {
+            if (_serialPort != null && _serialPort.IsOpen)
+            {
+                if (!_isPlaying)
+                {
+                    // Resume printing
+                    _serialPort.WriteLine("M24"); // SD resume command
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Resumed printing");
+                    _isPlaying = true;
+                }
+                else
+                {
+                    // Pause printing
+                    _serialPort.WriteLine("M25"); // SD pause command
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Paused printing");
+                    _isPlaying = false;
+                }
+                ExpireSolution(true);
+            }
         }
 
         public override void AddedToDocument(GH_Document document)

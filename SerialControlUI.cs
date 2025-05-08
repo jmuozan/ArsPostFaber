@@ -8,17 +8,22 @@ using Grasshopper.Kernel.Attributes;
 
 namespace crft
 {
-    class ComponentButton : GH_ComponentAttributes
+    /// <summary>
+    /// Adds a clickable button beneath the component for custom actions.
+    /// </summary>
+    internal class ComponentButton : GH_ComponentAttributes
     {
-        private const int ButtonSize = 18;
-        private readonly string _label;
+        private readonly GH_Component _owner;
+        private readonly Func<string> _labelProvider;
         private readonly Action _action;
         private RectangleF _buttonBounds;
         private bool _mouseDown;
 
-        public ComponentButton(GH_Component owner, string label, Action action) : base(owner)
+        public ComponentButton(GH_Component owner, Func<string> labelProvider, Action action)
+            : base(owner)
         {
-            _label = label;
+            _owner = owner;
+            _labelProvider = labelProvider;
             _action = action;
         }
 
@@ -26,15 +31,13 @@ namespace crft
         {
             base.Layout();
             const int margin = 3;
-
             var bounds = GH_Convert.ToRectangle(Bounds);
             var button = bounds;
             button.X += margin;
             button.Width -= margin * 2;
             button.Y = bounds.Bottom;
-            button.Height = ButtonSize;
-
-            bounds.Height += ButtonSize + margin;
+            button.Height = 18;
+            bounds.Height += button.Height + margin;
             Bounds = bounds;
             _buttonBounds = button;
         }
@@ -48,22 +51,20 @@ namespace crft
                 var font = GH_FontServer.NewFont(prototype, 6f / GH_GraphicsUtil.UiScale);
                 var radius = 3;
                 var highlight = !_mouseDown ? 8 : 0;
-                using (var capsule = GH_Capsule.CreateTextCapsule(_buttonBounds, _buttonBounds, GH_Palette.Black, _label, font, radius, highlight))
-                {
-                    capsule.Render(graphics, false, Owner.Locked, false);
-                }
+                using var capsule = GH_Capsule.CreateTextCapsule(_buttonBounds, _buttonBounds, GH_Palette.Black, _labelProvider(), font, radius, highlight);
+                capsule.Render(graphics, false, _owner.Locked, false);
             }
         }
 
-        private void SetMouseDown(bool value, GH_Canvas canvas, GH_CanvasMouseEvent e, bool action = true)
+        private void SetMouseDown(bool value, GH_Canvas canvas, GH_CanvasMouseEvent e, bool doAction = true)
         {
-            if (Owner.Locked || _mouseDown == value)
+            if (_owner.Locked || _mouseDown == value)
                 return;
             if (value && e.Button != MouseButtons.Left)
                 return;
             if (!_buttonBounds.Contains(e.CanvasLocation))
                 return;
-            if (_mouseDown && !value && action)
+            if (_mouseDown && !value && doAction)
                 _action();
             _mouseDown = value;
             canvas.Invalidate();

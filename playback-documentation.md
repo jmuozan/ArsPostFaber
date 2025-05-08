@@ -1,487 +1,226 @@
-# Robots Grasshopper - Simulation Playback Documentation
-
-This document explains the implementation of the Playback button in the Program simulation component of the Robots Grasshopper plugin. The playback functionality allows users to animate robot programs, visualizing how robots execute their movements over time.
+# Playback Button in the Program Simulation Component
 
 ## Overview
 
-The Program simulation component has a "Playback" button that opens a control panel for playing, stopping, and adjusting the playback speed of robot program simulations. The implementation consists of several interconnected classes:
+The Playback button feature in the Robots plugin for Grasshopper provides an interactive way to control robot simulation animations. This document outlines its implementation, functionality, and how to use it effectively.
 
-1. `Simulation` class - Core component that maintains state and handles program animation
-2. `SimulationForm` class - User interface for controlling the simulation 
-3. `ComponentButton` class - Custom Grasshopper component attribute that adds a button to a component
+## Implementation Details
 
-## Implementation Structure
+The implementation spans multiple files but is primarily centered in these key files:
 
-### 1. Simulation Component
+1. `Simulation.cs` - The main component class
+2. `SimulationForm.cs` - The UI form that contains the playback controls
+3. `ComponentButton.cs` - A custom button implementation for Grasshopper components
 
-The `Simulation` class (located in `src/Robots.Grasshopper/Program/Simulation.cs`) is the main Grasshopper component that handles program simulation. It:
+### Core Classes
 
-- Takes a program, time value, and normalization flag as inputs
-- Outputs robot meshes, joint rotations, TCP position, target index, time, program, and errors
-- Contains the playback control logic and time management
-- Has a custom attribute that adds a "Playback" button
+#### 1. `Simulation` Class
+
+Located in `src/Robots.Grasshopper/Program/Simulation.cs`, this class is a Grasshopper component that simulates a robot program. It manages the simulation state, handles component input/output, and defines the interactions with the playback UI.
+
+Key properties and fields:
+- `_form`: Reference to the playback UI dialog
+- `_lastTime`: Nullable DateTime to track when the simulation last updated
+- `_time`: Current simulation time in seconds
+- `Speed`: Animation playback speed multiplier
+
+Key methods:
+- `TogglePlay()`: Start or pause the simulation playback
+- `Stop()`: Reset the simulation to its initial state
+- `Pause()`: Pause the simulation without resetting
+- `Update()`: Advance the simulation based on elapsed time
+- `ToggleForm()`: Show or hide the playback control form
+- `SolveInstance()`: Core GH component method that updates the simulation state
+
+#### 2. `SimulationForm` Class
+
+Located in `src/Robots.Grasshopper/Program/SimulationForm.cs`, this class defines the UI dialog with playback controls.
+
+Key elements:
+- `Play`: CheckBox functioning as a toggle button for play/pause
+- `stop`: Button to reset the simulation
+- `slider`: Vertical slider to control playback speed
+- Constructor that initializes the UI and attaches event handlers
+
+#### 3. `ComponentButton` Class
+
+Located in `src/Robots.Grasshopper/ComponentButton.cs`, this is a custom GH component attribute that adds a button to the component UI.
+
+Key elements:
+- Custom rendering of a button beneath the component
+- Event handling for mouse interactions
+- Action callback mechanism to connect UI interaction to component logic
+
+## How the Playback Button Works
+
+### Button Creation
+
+1. The `Simulation` component overrides the `CreateAttributes()` method to replace the standard component attributes with `ComponentButton` attributes
+2. The `ComponentButton` constructor takes a reference to the component, a label ("Playback"), and an action callback (`ToggleForm`)
 
 ```csharp
-public sealed class Simulation : GH_Component
+public override void CreateAttributes()
 {
-    SimulationForm? _form;
-    DateTime? _lastTime;
-    double _time;
-    double _lastInputTime;
+    m_attributes = new ComponentButton(this, "Playback", ToggleForm);
+}
+```
 
-    internal double Speed = 1;
+### Form Display
 
-    public Simulation() : base("Program simulation", "Sim", 
-        "Rough simulation of the robot program, right click for playback controls", 
-        "Robots", "Components") { }
+When the button is clicked, the `ToggleForm()` method is called, which:
+1. Creates the `SimulationForm` if it doesn't exist yet
+2. Toggles its visibility
+3. Stops the simulation if the form is being hidden
 
-    // Other component methods...
+```csharp
+void ToggleForm()
+{
+    _form ??= new SimulationForm(this);
+    _form.Visible = !_form.Visible;
 
-    // Creates a custom button attribute for the component
-    public override void CreateAttributes()
+    if (!_form.Visible)
+        Stop();
+}
+```
+
+### Play/Pause Functionality
+
+The Play checkbox in the form calls the `TogglePlay()` method in the `Simulation` class:
+
+```csharp
+internal void TogglePlay()
+{
+    if (_lastTime is null)
     {
-        m_attributes = new ComponentButton(this, "Playback", ToggleForm);
-    }
-
-    // Toggles the playback control form
-    void ToggleForm()
-    {
-        _form ??= new SimulationForm(this);
-        _form.Visible = !_form.Visible;
-
-        if (!_form.Visible)
-            Stop();
-    }
-
-    // Play/pause toggle
-    internal void TogglePlay()
-    {
-        if (_lastTime is null)
-        {
-            _lastTime = DateTime.Now;
-            ExpireSolution(true);
-        }
-        else
-        {
-            Pause();
-        }
-    }
-
-    // Stop the simulation
-    internal void Stop()
-    {
-        Pause();
-        _time = _lastInputTime;
+        _lastTime = DateTime.Now;
         ExpireSolution(true);
-    }
-
-    // Pause the simulation
-    void Pause()
-    {
-        if (_form is not null)
-            _form.Play.Checked = false;
-
-        _lastTime = null;
-    }
-
-    // Update time and re-solve component
-    void Update()
-    {
-        if (_lastTime is null)
-            return;
-
-        var currentTime = DateTime.Now;
-        TimeSpan delta = currentTime - _lastTime.Value;
-        _lastTime = currentTime;
-        _time += delta.TotalSeconds * Speed;
-        ExpireSolution(true);
-    }
-}
-```
-
-### 2. Simulation Form
-
-The `SimulationForm` class (located in `src/Robots.Grasshopper/Program/SimulationForm.cs`) provides the user interface for controlling simulation playback. It:
-
-- Creates a form with play, stop, and speed control
-- Communicates with the main Simulation component
-- Handles user interaction events
-
-```csharp
-class SimulationForm : ComponentForm
-{
-    readonly Simulation _component;
-
-    internal readonly CheckBox Play;
-
-    public SimulationForm(Simulation component)
-    {
-        _component = component;
-
-        Title = "Playback";
-        MinimumSize = new Size(0, 200);
-
-        Padding = new Padding(5);
-
-        var font = new Font(FontFamilies.Sans, 14, FontStyle.None, FontDecoration.None);
-        var size = new Size(35, 35);
-
-        // Play button (checkbox that looks like a button)
-        Play = new CheckBox
-        {
-            Text = "\u25B6",  // Unicode triangle play symbol
-            Size = size,
-            Font = font,
-            Checked = false,
-            TabIndex = 0
-        };
-
-        Play.CheckedChanged += (s, e) => component.TogglePlay();
-
-        // Stop button
-        var stop = new Button
-        {
-            Text = "\u25FC",  // Unicode stop symbol
-            Size = size,
-            Font = font,
-            TabIndex = 1
-        };
-
-        stop.Click += (s, e) => component.Stop();
-
-        // Speed slider
-        var slider = new Slider
-        {
-            Orientation = Orientation.Vertical,
-            Size = new Size(-1, -1),
-            TabIndex = 2,
-            MaxValue = 400,
-            MinValue = -200,
-            TickFrequency = 100,
-            SnapToTick = true,
-            Value = 100,
-        };
-
-        slider.ValueChanged += (s, e) => component.Speed = (double)slider.Value / 100.0;
-
-        var speedLabel = new Label
-        {
-            Text = "100%",
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-
-        // Layout the controls
-        var layout = new DynamicLayout();
-        layout.BeginVertical();
-        layout.AddSeparateRow(padding: new Padding(10), spacing: new Size(10, 0), controls: [Play, stop]);
-        layout.BeginGroup("Speed");
-        layout.AddSeparateRow(slider, speedLabel);
-        layout.EndGroup();
-        layout.EndVertical();
-
-        Content = layout;
-    }
-
-    // Stop simulation when the form is closing
-    protected override void OnClosing(CancelEventArgs e)
-    {
-        _component.Stop();
-        base.OnClosing(e);
-    }
-}
-```
-
-### 3. Component Button
-
-The `ComponentButton` class (located in `src/Robots.Grasshopper/ComponentButton.cs`) is a custom `GH_ComponentAttributes` implementation that adds a button to a Grasshopper component. It:
-
-- Draws a button below the component
-- Handles mouse events
-- Executes an action when clicked
-
-```csharp
-class ComponentButton(GH_Component owner, string label, Action action) : GH_ComponentAttributes(owner)
-{
-    const int _buttonSize = 18;
-
-    readonly string _label = label;
-    readonly Action _action = action;
-
-    RectangleF _buttonBounds;
-    bool _mouseDown;
-
-    // Layout the component and button
-    protected override void Layout()
-    {
-        base.Layout();
-
-        const int margin = 3;
-
-        var bounds = GH_Convert.ToRectangle(Bounds);
-        var button = bounds;
-
-        button.X += margin;
-        button.Width -= margin * 2;
-        button.Y = bounds.Bottom;
-        button.Height = _buttonSize;
-
-        bounds.Height += _buttonSize + margin;
-
-        Bounds = bounds;
-        _buttonBounds = button;
-    }
-
-    // Render the component and button
-    protected override void Render(GH_Canvas canvas, Graphics graphics, GH_CanvasChannel channel)
-    {
-        base.Render(canvas, graphics, channel);
-
-        if (channel == GH_CanvasChannel.Objects)
-        {
-            var prototype = GH_FontServer.StandardAdjusted;
-            var font = GH_FontServer.NewFont(prototype, 6f / GH_GraphicsUtil.UiScale);
-            var radius = 3;
-            var highlight = !_mouseDown ? 8 : 0;
-
-            using var button = GH_Capsule.CreateTextCapsule(_buttonBounds, _buttonBounds, GH_Palette.Black, _label, font, radius, highlight);
-            button.Render(graphics, false, Owner.Locked, false);
-        }
-    }
-
-    // Handle mouse events
-    void SetMouseDown(bool value, GH_Canvas canvas, GH_CanvasMouseEvent e, bool action = true)
-    {
-        if (Owner.Locked || _mouseDown == value)
-            return;
-
-        if (value && e.Button != MouseButtons.Left)
-            return;
-
-        if (!_buttonBounds.Contains(e.CanvasLocation))
-            return;
-
-        if (_mouseDown && !value && action)
-            _action();
-
-        _mouseDown = value;
-        canvas.Invalidate();
-    }
-
-    public override GH_ObjectResponse RespondToMouseDown(GH_Canvas sender, GH_CanvasMouseEvent e)
-    {
-        SetMouseDown(true, sender, e);
-        return base.RespondToMouseDown(sender, e);
-    }
-
-    public override GH_ObjectResponse RespondToMouseUp(GH_Canvas sender, GH_CanvasMouseEvent e)
-    {
-        SetMouseDown(false, sender, e);
-        return base.RespondToMouseUp(sender, e);
-    }
-
-    public override GH_ObjectResponse RespondToMouseMove(GH_Canvas sender, GH_CanvasMouseEvent e)
-    {
-        SetMouseDown(false, sender, e, false);
-        return base.RespondToMouseMove(sender, e);
-    }
-}
-```
-
-### 4. ComponentForm Base Class
-
-The `ComponentForm` class (located in `src/Robots.Grasshopper/ComponentForm.cs`) is a base class for all forms in the plugin. It:
-
-- Centers the form on the mouse
-- Makes the form non-resizable
-- Handles closing events
-
-```csharp
-class ComponentForm : Form
-{
-    public ComponentForm()
-    {
-        Maximizable = false;
-        Minimizable = false;
-        Resizable = false;
-        Topmost = true;
-        ShowInTaskbar = true;
-        Owner = Rhino.UI.RhinoEtoApp.MainWindow;
-    }
-
-    // Center the form on the mouse when it becomes visible
-    public override bool Visible
-    {
-        get => base.Visible;
-        set
-        {
-            if (value)
-                CenterOnMouse();
-
-            base.Visible = value;
-        }
-    }
-
-    void CenterOnMouse()
-    {
-        var mousePos = Mouse.Position;
-        int x = (int)mousePos.X + 20;
-        int y = (int)mousePos.Y - MinimumSize.Height / 2;
-        Location = new Point(x, y);
-    }
-
-    // Hide the form when the user tries to close it
-    protected override void OnClosing(CancelEventArgs e)
-    {
-        Visible = false;
-        e.Cancel = true;
-
-        base.OnClosing(e);
-    }
-}
-```
-
-## Simulation Implementation
-
-The `Program` class (in `src/Robots/Program/Program.cs`) contains the core simulation logic:
-
-```csharp
-public void Animate(double time, bool isNormalized = true)
-{
-    if (_simulation is null)
-        return;
-
-    _simulation.Step(time, isNormalized);
-
-    if (MeshPoser is null)
-        return;
-
-    var current = _simulation.CurrentSimulationPose;
-    var systemTarget = Targets[current.TargetIndex];
-
-    MeshPoser.Pose(current.Kinematics, systemTarget);
-}
-```
-
-The `Simulation` class (in `src/Robots/Program/Simulation.cs`) handles time interpolation:
-
-```csharp
-public void Step(double time, bool isNormalized)
-{
-    if (_keyframes.Count == 1)
-        return;
-
-    if (isNormalized) time *= _program.Duration;
-    time = Clamp(time, 0, _duration);
-
-    // Find the appropriate keyframes based on time
-    if (time >= CurrentSimulationPose.CurrentTime)
-    {
-        for (int i = _currentTarget; i < _keyframes.Count - 1; i++)
-        {
-            if (_keyframes[i + 1].TotalTime >= time)
-            {
-                _currentTarget = i;
-                break;
-            }
-        }
     }
     else
     {
-        for (int i = _currentTarget; i >= 0; i--)
-        {
-            if (_keyframes[i].TotalTime <= time)
-            {
-                _currentTarget = i;
-                break;
-            }
-        }
+        Pause();
     }
-
-    // Interpolate between keyframes
-    var systemTarget = _keyframes[_currentTarget + 1];
-    var prevSystemTarget = _keyframes[_currentTarget + 0];
-    var prevJoints = prevSystemTarget.ProgramTargets.Map(x => x.Kinematics.Joints);
-
-    var kineTargets = systemTarget.Lerp(prevSystemTarget, _program.RobotSystem, time, prevSystemTarget.TotalTime, systemTarget.TotalTime);
-    CurrentSimulationPose.Kinematics = _program.RobotSystem.Kinematics(kineTargets, prevJoints);
-    CurrentSimulationPose.TargetIndex = systemTarget.Index;
-    CurrentSimulationPose.CurrentTime = time;
 }
 ```
 
-## How It All Works Together
+This method:
+1. Starts the simulation by setting `_lastTime` to the current time if playback is not active
+2. Calls `Pause()` if playback is already active
+3. Triggers a component update via `ExpireSolution(true)`
 
-1. The `Simulation` component renders a "Playback" button using the `ComponentButton` class.
-2. When the user clicks the button, `ToggleForm()` is called, which creates and shows the `SimulationForm`.
-3. The user interacts with the form:
-   - Clicking Play toggles the playback state by calling `TogglePlay()`
-   - Clicking Stop resets the simulation by calling `Stop()`
-   - Adjusting the slider changes the playback speed by setting the `Speed` property
-4. During playback, the `Update()` method increments the time based on real elapsed time and the speed setting.
-5. Each update causes the component to re-solve, which calls `Animate()` on the program object.
-6. The `Animate()` method calls `Step()` on the simulation object, which interpolates between keyframes.
-7. The interpolated kinematics are then used to position the robot meshes for visualization.
+### Time Update Mechanism
 
-## How to Apply It
+When playback is active:
+1. The `Update()` method calculates time elapsed since the last frame
+2. Advances the simulation time: `_time += delta.TotalSeconds * Speed`
+3. Triggers another component update to refresh the display
 
-To use the playback functionality in your own Grasshopper components:
+### Speed Control
 
-1. Create a component that inherits from `GH_Component`.
-2. Override the `CreateAttributes()` method to use a `ComponentButton`.
-3. Implement methods for controlling time-based animation (toggle play, stop, etc.).
-4. Create a form class that inherits from `ComponentForm` for user controls.
-5. Connect the form's events to the component's control methods.
-
-Example of adding a basic playback button to a component:
+The speed slider adjusts the `Speed` property of the Simulation component, determining how quickly the simulation advances:
 
 ```csharp
-public class MyAnimatedComponent : GH_Component
-{
-    private DateTime? _lastTime;
-    private double _time = 0;
-    
-    // Constructor and other methods...
-    
-    public override void CreateAttributes()
-    {
-        m_attributes = new ComponentButton(this, "Animate", ToggleAnimation);
-    }
-    
-    void ToggleAnimation()
-    {
-        if (_lastTime == null)
-        {
-            _lastTime = DateTime.Now;
-            ExpireSolution(true);
-        }
-        else
-        {
-            _lastTime = null;
-        }
-    }
-    
-    protected override void SolveInstance(IGH_DataAccess DA)
-    {
-        // Update time if animation is active
-        if (_lastTime != null)
-        {
-            var now = DateTime.Now;
-            TimeSpan delta = now - _lastTime.Value;
-            _lastTime = now;
-            _time += delta.TotalSeconds;
-            
-            // Schedule next update
-            ExpireSolution(true);
-        }
-        
-        // Use _time to update outputs
-        // ...
-    }
-}
+slider.ValueChanged += (s, e) => component.Speed = (double)slider.Value / 100.0;
 ```
+
+## How to Use the Playback Button
+
+1. **Add the Simulation Component**: Find "Program simulation" (or "Sim") in the "Robots" > "Components" tab in Grasshopper.
+
+2. **Connect Required Inputs**:
+   - `P` (Program): Connect to the output of a Create Program component
+   - `T` (Time): Optional time input (default: 0)
+   - `N` (Normalized): Optional boolean to specify if time is normalized (default: true)
+
+3. **View Outputs**:
+   - `M` (System meshes): 3D geometry of robot at current time
+   - `J` (Joint rotations): Current joint values
+   - `P` (Plane): TCP position
+   - `I` (Index): Current target index
+   - `T` (Time): Current time in seconds
+   - `P` (Program): Pass-through of the input program
+   - `E` (Errors): Any simulation errors
+
+4. **Interact with the Playback Button**:
+   - Click the "Playback" button below the component to open the playback controls
+   - Use the play/pause toggle (▶) to start/stop the animation
+   - Use the stop button (■) to reset the animation to the beginning
+   - Adjust the slider to control playback speed (100% is normal speed)
+
+5. **Visualization**:
+   - Connect the `M` output to a Display component to visualize the robot
+   - Connect the component to a Custom Preview component for more control
+   - Use the Simple Trail component to create a path visualization of the robot's motion
+
+## Implementation Flow Diagram
+
+```
+User clicks "Playback" button
+    │
+    ▼
+ToggleForm() is called
+    │
+    ▼
+SimulationForm appears
+    │
+    ▼
+User clicks Play button
+    │
+    ▼
+TogglePlay() is called
+    │
+    ▼
+_lastTime is set to current time
+    │
+    ▼
+ExpireSolution(true) triggers component update
+    │
+    ▼
+SolveInstance() runs
+    │
+    ▼
+Update() calculates time delta
+    │
+    ▼
+_time is updated based on Speed setting
+    │
+    ▼
+Component outputs updated robot state
+    │
+    ▼
+ExpireSolution(true) triggers next frame
+```
+
+## Advanced Usage
+
+### Connecting to Other Components
+
+The Simulation component is designed to work seamlessly with other Robots components:
+
+- Connect its output to the **Simple Trail** component to visualize the robot's movement path
+- Use the `Program` output to synchronize other visualization components with the simulation
+- Connect the `Joint rotations` output to analysis components for motion studies
+
+### Manual Time Control
+
+Instead of using the Playback button, you can also:
+- Manually input time values to the `T` input
+- Connect a Number Slider to the `T` input for interactive scrubbing
+- Connect a Grasshopper Timer component for automated animation
+
+### Customizing the Simulation
+
+The simulation can be controlled via GHPython or C# scripts by:
+- Accessing the component's `_time` field
+- Setting the `Speed` property
+- Calling the `TogglePlay()`, `Stop()`, or `Pause()` methods
+
+## Troubleshooting
+
+- **Animation not playing**: Ensure the program has valid targets and no simulation errors
+- **Slow performance**: Reduce the complexity of the robot meshes or increase the step size
+- **Playback form not appearing**: Check if another instance is already open
+- **Jerky animation**: Try adjusting the Speed slider to a lower value
 
 ## Conclusion
 
-The playback implementation in the Robots Grasshopper plugin provides a clean and effective way to control time-based animations. By separating the UI from the animation logic and using a custom component attribute for the button, it achieves a seamless integration with the Grasshopper interface while maintaining good separation of concerns.
-
-The same pattern can be applied to any time-based simulation or animation in Grasshopper components, making it a useful reference for implementing similar functionality in other plugins.
+The Playback button is a powerful feature for interactively visualizing robot programs in Grasshopper. Its implementation balances functionality with user experience, making robot simulation accessible and intuitive.

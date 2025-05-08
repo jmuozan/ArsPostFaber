@@ -23,6 +23,7 @@
   <ItemGroup>
     <!-- Exclude Segment-Anything folder from build since it contains WPF code -->
     <Compile Remove="Segment-Anything\**" />
+      <!-- Exclude sim folder (examples) from build until integrated -->
     <EmbeddedResource Remove="Segment-Anything\**" />
     <None Remove="Segment-Anything\**" />
     
