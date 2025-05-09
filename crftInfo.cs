@@ -17,7 +17,7 @@ namespace crft
         
         public override string AuthorName => "Jorge Muyo";
         
-        public override string AuthorContact => "https://github.com/jorgemuyo";
+        public override string AuthorContact => "https://github.com/jmuozan";
         
         // No constructor-based registration - we'll register in the component classes
     }

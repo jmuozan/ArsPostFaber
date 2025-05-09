@@ -186,9 +186,27 @@ Project Link: [https://github.com/github_username/repo_name](https://github.com/
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
+* [](https://github.com/LingDong-/t43?tab=readme-ov-file)
+* [](https://github.com/visose/Robots)
+* [](https://github.com/frikkfossdal/Vespidae)
+* [](https://github.com/JonasFeron/PythonNETGrasshopperTemplate)
+* [](https://www.youtube.com/watch?v=Em_teGSpP9w&list=PLx3k0RGeXZ_yZgg-f2k7fO3WxBQ0zLCeU)
+* [](https://developer.rhino3d.com/guides/rhinocommon/your-first-plugin-mac/)
+* [](https://www.amazon.com/Advanced-3D-Printing-Grasshopper%C2%AE-Clay/dp/B086Y7CLLC)
+* [](https://www.open3d.org/html/introduction.html)
+* [](https://chuoling.github.io/mediapipe/solutions/holistic.html)
 * []()
 * []()
 * []()
+* []()
+* []()
+* []()
+* []()
+* []()
+* []()
+* []()
+* []()
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
