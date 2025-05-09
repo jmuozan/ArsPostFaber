@@ -186,15 +186,15 @@ Project Link: [https://github.com/github_username/repo_name](https://github.com/
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
-* [](https://github.com/LingDong-/t43?tab=readme-ov-file)
-* [](https://github.com/visose/Robots)
-* [](https://github.com/frikkfossdal/Vespidae)
-* [](https://github.com/JonasFeron/PythonNETGrasshopperTemplate)
-* [](https://www.youtube.com/watch?v=Em_teGSpP9w&list=PLx3k0RGeXZ_yZgg-f2k7fO3WxBQ0zLCeU)
-* [](https://developer.rhino3d.com/guides/rhinocommon/your-first-plugin-mac/)
-* [](https://www.amazon.com/Advanced-3D-Printing-Grasshopper%C2%AE-Clay/dp/B086Y7CLLC)
-* [](https://www.open3d.org/html/introduction.html)
-* [](https://chuoling.github.io/mediapipe/solutions/holistic.html)
+* [t43](https://github.com/LingDong-/t43?tab=readme-ov-file)
+* [Robots](https://github.com/visose/Robots)
+* [Vespidae](https://github.com/frikkfossdal/Vespidae)
+* [Python gh Template](https://github.com/JonasFeron/PythonNETGrasshopperTemplate)
+* [Advanced Developement in grasshopper](https://www.youtube.com/watch?v=Em_teGSpP9w&list=PLx3k0RGeXZ_yZgg-f2k7fO3WxBQ0zLCeU)
+* [Rhino developer macos gide](https://developer.rhino3d.com/guides/rhinocommon/your-first-plugin-mac/)
+* [Advenced 3D Printing in grasshopper](https://www.amazon.com/Advanced-3D-Printing-Grasshopper%C2%AE-Clay/dp/B086Y7CLLC)
+* [Open3D](https://www.open3d.org/html/introduction.html)
+* [Mediapipe](https://chuoling.github.io/mediapipe/solutions/holistic.html)
 * []()
 * []()
 * []()
@@ -214,16 +214,16 @@ Project Link: [https://github.com/github_username/repo_name](https://github.com/
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/github_username/repo_name.svg?style=for-the-badge
-[contributors-url]: https://github.com/github_username/repo_name/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/github_username/repo_name.svg?style=for-the-badge
-[forks-url]: https://github.com/github_username/repo_name/network/members
-[stars-shield]: https://img.shields.io/github/stars/github_username/repo_name.svg?style=for-the-badge
-[stars-url]: https://github.com/github_username/repo_name/stargazers
-[issues-shield]: https://img.shields.io/github/issues/github_username/repo_name.svg?style=for-the-badge
-[issues-url]: https://github.com/github_username/repo_name/issues
-[license-shield]: https://img.shields.io/github/license/github_username/repo_name.svg?style=for-the-badge
-[license-url]: https://github.com/github_username/repo_name/blob/master/LICENSE.txt
+[contributors-shield]: https://img.shields.io/github/contributors/jmuozan/crft.svg?style=for-the-badge
+[contributors-url]: https://github.com/jmuozan/crft/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/jmuozan/crft.svg?style=for-the-badge
+[forks-url]: https://github.com/jmuozan/crft/network/members
+[stars-shield]: https://img.shields.io/github/stars/jmuozan/crft.svg?style=for-the-badge
+[stars-url]: https://github.com/jmuozan/crft/stargazers
+[issues-shield]: https://img.shields.io/github/issues/jmuozan/crft.svg?style=for-the-badge
+[issues-url]: https://github.com/jmuozan/crft/issues
+[license-shield]: https://img.shields.io/github/license/jmuozan/crft.svg?style=for-the-badge
+[license-url]: https://github.com/jmuozan/crft/blob/master/LICENSE.txt
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/linkedin_username
 [product-screenshot]: images/screenshot.png
