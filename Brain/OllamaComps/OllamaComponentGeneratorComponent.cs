@@ -5,34 +5,60 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Grasshopper.Kernel;
 using System.Text.Json;
+using System.CodeDom.Compiler;
+using Microsoft.CSharp;
+using Rhino;
 using Brain.Templates;
+using Grasshopper.GUI.Canvas;
+using System.Drawing;
 
 namespace Brain.OllamaComps
 {
-    public class OllamaComponentGeneratorComponent : GH_Component_HTTPAsync
+    public class OllamaComponentMakerComponent : GH_Component_HTTPAsync
     {
-        public OllamaComponentGeneratorComponent()
-          : base("Generate GH Component", "GHGen",
-              "Uses Ollama to generate a Grasshopper component based on a prompt",
+        public OllamaComponentMakerComponent()
+          : base("Create GH Component", "GHCreate",
+              "Generates and compiles a Grasshopper component via Ollama",
               "Brain", "LLM") { }
+        /// <summary>
+        /// Automatically add and wire an OllamaModelParam dropdown on placement.
+        /// </summary>
+        public override void AddedToDocument(GH_Document document)
+        {
+            base.AddedToDocument(document);
+            // If already wired, skip
+            if (Params.Input.Count > 1 && Params.Input[1].SourceCount > 0) return;
+            // Create and wire model dropdown list
+            var list = new OllamaModelParam();
+            document.AddObject(list, false);
+            document.NewSolution(false);
+            // Connect dropdown to Model input
+            if (Params.Input.Count > 1)
+                Params.Input[1].AddSource(list);
+        }
 
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
-            pManager.AddBooleanParameter("Generate", "G", "Generate the component?", GH_ParamAccess.item, false);
-            pManager.AddTextParameter("Model", "M", "Ollama model name (e.g., deepseek-r1:1.5b)", GH_ParamAccess.item, "deepseek-r1:1.5b");
-            pManager.AddTextParameter("Description", "D", "Description of the component you want to generate", GH_ParamAccess.item);
-            pManager.AddTextParameter("Component Name", "N", "Name for the component (optional)", GH_ParamAccess.item, string.Empty);
+            pManager.AddBooleanParameter("Generate", "G", "Toggle to generate and compile component", GH_ParamAccess.item, false);
+            pManager.AddParameter(new OllamaModelParam(), "Model", "M", "Ollama model to use", GH_ParamAccess.item);
+            pManager.AddTextParameter("Description", "D", "Natural-language description of the component", GH_ParamAccess.item);
+            pManager.AddTextParameter("Component Name", "N", "Optional component class/name", GH_ParamAccess.item, string.Empty);
             pManager[3].Optional = true;
-            pManager.AddNumberParameter("Temperature", "T", "Temperature for generation (0-1)", GH_ParamAccess.item, 0.7);
-            pManager.AddTextParameter("URL", "U", "Ollama API URL (default: http://localhost:11434/api/generate)", GH_ParamAccess.item, "http://localhost:11434/api/generate");
-            pManager.AddIntegerParameter("Timeout", "TO", "Timeout for the request in ms", GH_ParamAccess.item, 60000);
+            pManager.AddTextParameter("Category", "C", "Grasshopper ribbon category", GH_ParamAccess.item, "Brain");
+            pManager.AddTextParameter("Subcategory", "S", "Grasshopper ribbon subcategory", GH_ParamAccess.item, "LLM");
+            pManager.AddNumberParameter("Temperature", "T", "Generation temperature (0-1)", GH_ParamAccess.item, 0.7);
+            pManager.AddIntegerParameter("Max Tokens", "MT", "Maximum number of tokens to generate", GH_ParamAccess.item, 2048);
+            pManager.AddTextParameter("URL", "U", "Ollama API endpoint", GH_ParamAccess.item, "http://localhost:11434/api/generate");
+            pManager.AddIntegerParameter("Timeout", "TO", "Request timeout (ms)", GH_ParamAccess.item, 60000);
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager pManager)
         {
-            pManager.AddTextParameter("Generated Code", "C", "C# code for the generated component", GH_ParamAccess.item);
-            pManager.AddTextParameter("Component Class", "CC", "Component class name", GH_ParamAccess.item);
-            pManager.AddTextParameter("Save Path", "P", "Path where the component was saved (if enabled)", GH_ParamAccess.item);
+            pManager.AddTextParameter("Generated Code", "C", "Generated C# code", GH_ParamAccess.item);
+            pManager.AddTextParameter("Component Class", "CC", "Generated component class name", GH_ParamAccess.item);
+            pManager.AddTextParameter("Source Path", "CS", "File path of saved .cs source", GH_ParamAccess.item);
+            pManager.AddTextParameter("Assembly Path", "DLL", "File path of compiled .gha assembly", GH_ParamAccess.item);
+            pManager.AddBooleanParameter("Success", "S", "Compilation success", GH_ParamAccess.item);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -53,7 +79,7 @@ namespace Brain.OllamaComps
                     case RequestState.Done:
                         this.Message = "Complete!";
                         _currentState = RequestState.Idle;
-                        ProcessAndExtractCode(DA);
+                        ProcessAndCompileCode(DA);
                         break;
                 }
                 _shouldExpire = false;
@@ -83,6 +109,8 @@ namespace Brain.OllamaComps
             DA.GetData("Temperature", ref temperature);
             if (!DA.GetData("URL", ref url)) return;
             DA.GetData("Timeout", ref timeout);
+            int maxTokens = 2048;
+            DA.GetData("Max Tokens", ref maxTokens);
 
             if (string.IsNullOrEmpty(url))
             {
@@ -101,20 +129,33 @@ namespace Brain.OllamaComps
                 return;
             }
 
-            string systemPrompt = "You are an expert C# programmer specializing in Grasshopper plugin development. I need you to create a complete, well-structured Grasshopper component based on the description I provide. Your response should ONLY include the complete C# code with no explanations. Follow these guidelines: 1. Use standard Grasshopper component patterns with RegisterInputParams, RegisterOutputParams, and SolveInstance methods 2. Include appropriate namespaces and error handling 3. Generate a unique GUID for the component using the format: new Guid(\"00000000-0000-0000-0000-000000000000\"). 4. Make sure the code is complete and can be directly compiled 5. DO NOT include any explanations or markdown - ONLY output the C# code file";
-
-            string prompt = "Create a Grasshopper component that: " + description;
+            // Combine system instructions with user description into a single prompt
+            string systemPrompt = "You are an expert C# programmer specializing in Grasshopper plugin development. " +
+                                   "Create a complete, well-structured Grasshopper component based on the description provided. " +
+                                   "Respond with only the full C# code for the component (no explanations or markdown).";
+            // Build user prompt
+            string userPrompt = "Component description: " + description;
             if (!string.IsNullOrEmpty(componentName))
-                prompt += $"\nThe component should be named: {componentName}";
-            prompt += "\nUse the Brain.Templates namespace if appropriate for HTTP requests.";
-
-            string body = $"{{\"model\":\"{model}\",\"system\":\"{systemPrompt.Replace("\"", "\\\"")}\",\"prompt\":\"{prompt.Replace("\"", "\\\"")}\",\"temperature\":{temperature},\"stream\":false}}";
+                userPrompt += $"\nComponent name: {componentName}";
+            // Merge into one prompt for Ollama
+            string fullPrompt = systemPrompt + "\n" + userPrompt;
+            // Prepare request body for Ollama /api/generate
+            // Build JSON payload using serializer to handle escaping
+            var requestPayload = new
+            {
+                model = model,
+                prompt = fullPrompt,
+                max_tokens = maxTokens,
+                temperature = temperature,
+                stream = false
+            };
+            string body = JsonSerializer.Serialize(requestPayload);
             _currentState = RequestState.Requesting;
             this.Message = "Generating Component...";
             POSTAsync(url, body, "application/json", string.Empty, timeout);
         }
 
-        private void ProcessAndExtractCode(IGH_DataAccess DA)
+        private void ProcessAndCompileCode(IGH_DataAccess DA)
         {
             try
             {
@@ -127,14 +168,30 @@ namespace Brain.OllamaComps
                     cleanCode = cleanCode[..cleanCode.LastIndexOf("```")];
                 cleanCode = cleanCode.Trim();
                 string className = ExtractClassName(cleanCode);
+                string csPath = SaveComponentCode(cleanCode, className);
+                string assemblyPath = Path.ChangeExtension(csPath, ".gha");
+                bool success = true;
+                try
+                {
+                    CompileCode(cleanCode, assemblyPath);
+                }
+                catch (Exception exCompile)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Compilation failed: " + exCompile.Message);
+                    assemblyPath = string.Empty;
+                    success = false;
+                }
                 DA.SetData(0, cleanCode);
                 DA.SetData(1, className);
-                DA.SetData(2, SaveComponentCode(cleanCode, className));
+                DA.SetData(2, csPath);
+                DA.SetData(3, assemblyPath);
+                DA.SetData(4, success);
             }
             catch (Exception ex)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Error processing generated code: " + ex.Message);
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Error processing response: " + ex.Message);
                 DA.SetData(0, _response);
+                DA.SetData(4, false);
             }
         }
 
@@ -159,6 +216,36 @@ namespace Brain.OllamaComps
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Failed to save component: " + ex.Message);
                 return string.Empty;
+            }
+        }
+        
+        /// <summary>
+        /// Compiles C# source code into a Grasshopper plugin assembly (.gha).
+        /// </summary>
+        private void CompileCode(string code, string outputPath)
+        {
+            var provider = new CSharpCodeProvider();
+            var parameters = new CompilerParameters
+            {
+                GenerateExecutable = false,
+                OutputAssembly = outputPath,
+                GenerateInMemory = false
+            };
+            parameters.ReferencedAssemblies.Add("System.dll");
+            parameters.ReferencedAssemblies.Add("System.Core.dll");
+            parameters.ReferencedAssemblies.Add("System.Drawing.dll");
+            string rhinoDir = Path.GetDirectoryName(typeof(Rhino.RhinoApp).Assembly.Location) ?? string.Empty;
+            parameters.ReferencedAssemblies.Add(Path.Combine(rhinoDir, "Rhino.dll"));
+            parameters.ReferencedAssemblies.Add(Path.Combine(rhinoDir, "Grasshopper.dll"));
+            parameters.ReferencedAssemblies.Add(Path.Combine(rhinoDir, "GH_IO.dll"));
+            parameters.ReferencedAssemblies.Add(Assembly.GetExecutingAssembly().Location);
+            CompilerResults results = provider.CompileAssemblyFromSource(parameters, code);
+            if (results.Errors.HasErrors)
+            {
+                var sb = new StringBuilder("Compilation errors:");
+                foreach (CompilerError err in results.Errors)
+                    sb.AppendLine($"Line {err.Line}: {err.ErrorText}");
+                throw new Exception(sb.ToString());
             }
         }
 

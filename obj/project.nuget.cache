@@ -1,11 +1,12 @@
 {
   "version": 2,
-  "dgSpecHash": "jtpzo1xPUQI=",
+  "dgSpecHash": "bwtZknOBwO8=",
   "success": true,
   "projectFilePath": "/Users/jorgemuyo/Desktop/crft/crft.csproj",
   "expectedPackageFiles": [
     "/Users/jorgemuyo/.nuget/packages/grasshopper/8.0.23304.9001/grasshopper.8.0.23304.9001.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/mediapipe/1.0.0.1/mediapipe.1.0.0.1.nupkg.sha512",
+    "/Users/jorgemuyo/.nuget/packages/microsoft.csharp/4.7.0/microsoft.csharp.4.7.0.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/microsoft.extensions.logging.abstractions/1.1.2/microsoft.extensions.logging.abstractions.1.1.2.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/microsoft.ml.onnxruntime/1.16.3/microsoft.ml.onnxruntime.1.16.3.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/microsoft.ml.onnxruntime.managed/1.16.3/microsoft.ml.onnxruntime.managed.1.16.3.nupkg.sha512",
@@ -72,6 +73,7 @@
     "/Users/jorgemuyo/.nuget/packages/serialportstream/2.4.2/serialportstream.2.4.2.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.appcontext/4.3.0/system.appcontext.4.3.0.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.buffers/4.3.0/system.buffers.4.3.0.nupkg.sha512",
+    "/Users/jorgemuyo/.nuget/packages/system.codedom/7.0.0/system.codedom.7.0.0.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.collections/4.3.0/system.collections.4.3.0.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.collections.concurrent/4.3.0/system.collections.concurrent.4.3.0.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.collections.immutable/1.3.0/system.collections.immutable.1.3.0.nupkg.sha512",

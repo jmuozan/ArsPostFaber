@@ -46,14 +46,15 @@ namespace Brain.Templates
                     try
                     {
                         var resp = await client.PostAsync(url, content).ConfigureAwait(false);
+                        string respBody = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
                         if (resp.IsSuccessStatusCode)
                         {
-                            _response = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                            _response = respBody;
                             _currentState = RequestState.Done;
                         }
                         else
                         {
-                            _response = $"HTTP Error {resp.StatusCode}: {resp.ReasonPhrase}";
+                            _response = $"HTTP Error {(int)resp.StatusCode} {resp.ReasonPhrase}: {respBody}";
                             _currentState = RequestState.Error;
                         }
                     }

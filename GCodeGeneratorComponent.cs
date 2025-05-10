@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using Rhino.Display;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
@@ -13,6 +15,14 @@ namespace crft
     /// </summary>
     public class GCodeGeneratorComponent : GH_Component
     {
+        // Printing area bounds (X, Y, Z)
+        private double _areaWidth = 20.0;
+        private double _areaDepth = 20.0;
+        private double _areaHeight = 25.0;
+        // Preview path curves for drawing and output (connected toolpath)
+        private List<Curve> _previewPathCurves = new List<Curve>();
+        // Data for viewport draw
+        private List<Curve> _gcodePaths = new List<Curve>();
         public GCodeGeneratorComponent()
           : base("GCode Generator", "GGen",
               "Generate simple G-code by slicing geometry", "crft", "Control")
@@ -30,6 +40,16 @@ namespace crft
             pManager.AddNumberParameter("Layer Height", "L", "Layer height increment (mm)", GH_ParamAccess.item, 0.5);
             pManager.AddBooleanParameter("Fill Bottom", "FB", "Whether to generate bottom layer", GH_ParamAccess.item, true);
             pManager.AddNumberParameter("Feed Rate", "F", "Feed rate (mm/min)", GH_ParamAccess.item, 1500);
+            // Printing area dimensions
+            pManager.AddNumberParameter("Print Area Width", "AW", "Printable area width in X (mm)", GH_ParamAccess.item, 20.0);
+            pManager[5].Optional = true;
+            pManager.AddNumberParameter("Print Area Depth", "AD", "Printable area depth in Y (mm)", GH_ParamAccess.item, 20.0);
+            pManager[6].Optional = true;
+            pManager.AddNumberParameter("Print Area Height", "AH", "Printable area max height in Z (mm)", GH_ParamAccess.item, 25.0);
+            pManager[7].Optional = true;
+            // Seam orientation for contour starts: 0=natural, R=random, N/S/E/W
+            pManager.AddTextParameter("Seam Orientation", "SO", "Seam orientation: 0=natural, R=random, N,S,E,W", GH_ParamAccess.item, "0");
+            pManager[8].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager pManager)
@@ -54,11 +74,28 @@ namespace crft
             DA.GetData(2, ref layerHeight);
             DA.GetData(3, ref fillBottom);
             DA.GetData(4, ref feedRate);
-            // Travel rate default: twice feed rate for rapid moves
+            // Get printing area dimensions
+            double areaWidth = _areaWidth;
+            double areaDepth = _areaDepth;
+            double areaHeight = _areaHeight;
+            if (Params.Input.Count > 5) DA.GetData(5, ref areaWidth);
+            if (Params.Input.Count > 6) DA.GetData(6, ref areaDepth);
+            if (Params.Input.Count > 7) DA.GetData(7, ref areaHeight);
+            _areaWidth = areaWidth;
+            _areaDepth = areaDepth;
+            _areaHeight = areaHeight;
+            // Travel rate for rapid moves
             double travelRate = feedRate * 2;
 
+            // Seam orientation
+            string seamStr = "0";
+            if (Params.Input.Count > 8) DA.GetData(8, ref seamStr);
+            char seamOrient = string.IsNullOrEmpty(seamStr) ? '0' : char.ToUpperInvariant(seamStr[0]);
+            
             var gcode = new List<string>();
+            // preview geometry outlines (unused now) and path curves
             var allSections = new List<Curve>();
+            _previewPathCurves.Clear();
             // Validate geometry
             if (geoWrapper == null || geoWrapper.Value == null)
             {
@@ -72,9 +109,31 @@ namespace crft
             var goo = data as IGH_GeometricGoo;
             if (goo != null)
                 data = goo.ScriptVariable();
-            // Detect Brep or Mesh
+            // Detect Brep or Mesh and center in X/Y within print area
             Brep br = data as Brep;
             Mesh mesh = data as Mesh;
+            if (br != null)
+            {
+                // center Brep in XY
+                br = br.DuplicateBrep();
+                var bb = br.GetBoundingBox(true);
+                var center = (bb.Min + bb.Max) * 0.5;
+                var shift = new Vector3d(areaWidth * 0.5 - center.X,
+                                          areaDepth * 0.5 - center.Y, 0);
+                br.Transform(Transform.Translation(shift));
+                data = br;
+            }
+            else if (mesh != null)
+            {
+                // center Mesh in XY
+                mesh = mesh.DuplicateMesh();
+                var bb = mesh.GetBoundingBox(true);
+                var center = (bb.Min + bb.Max) * 0.5;
+                var shift = new Vector3d(areaWidth * 0.5 - center.X,
+                                          areaDepth * 0.5 - center.Y, 0);
+                mesh.Transform(Transform.Translation(shift));
+                data = mesh;
+            }
             if (br == null && mesh == null)
             {
                 gcode.Add("; Unsupported geometry type");
@@ -166,9 +225,15 @@ namespace crft
                             }
                         }
                     }
+                    // Reorient shells by seam before path sequencing
+                    for (int i = 0; i < shellPlines.Count; i++)
+                        shellPlines[i] = ReorientSeam(shellPlines[i], seamOrient);
                     // Generate G-code for shells
                     var shellGcode = SequencePlines(shellPlines, z, feedRate, travelRate);
                     gcode.AddRange(shellGcode);
+                    // Preview connected shell paths
+                    var shellPathCurves = ConnectPlines(shellPlines);
+                    _previewPathCurves.AddRange(shellPathCurves);
                     // Skip default contour loops for bottom layer
                     continue;
                 }
@@ -189,6 +254,9 @@ namespace crft
                             allSections.Add(crv.DuplicateCurve());
                         }
                     }
+                    // Reorient each contour polyline to preferred seam
+                    for (int i = 0; i < polylines.Count; i++)
+                        polylines[i] = ReorientSeam(polylines[i], seamOrient);
                     if (polylines.Count > 0)
                     {
                         var used = new bool[polylines.Count];
@@ -254,6 +322,8 @@ namespace crft
                             globalCurrentPt = orderedPl[orderedPl.Count - 1];
                             firstContour = false;
                         }
+                        // Preview connected contour paths
+                        _previewPathCurves.AddRange(ConnectPlines(polylines));
                     }
                 }
                 else
@@ -263,13 +333,33 @@ namespace crft
             }
             // Output G-code
             DA.SetDataList(0, gcode);
-            // Unite curve segments for smoother preview/path
-            Curve[] outputPaths;
-            if (allSections.Count > 0)
-                outputPaths = Curve.JoinCurves(allSections.ToArray(), tol);
+            // Merge connected preview segments into a single PolylineCurve for the full 3D path
+            if (_previewPathCurves.Count > 0)
+            {
+                var pts = new List<Point3d>();
+                bool firstAdded = false;
+                foreach (var crv in _previewPathCurves)
+                {
+                    // add start of first segment
+                    if (!firstAdded)
+                    {
+                        pts.Add(crv.PointAtStart);
+                        firstAdded = true;
+                    }
+                    // always add end point
+                    pts.Add(crv.PointAtEnd);
+                }
+                var fullPath = new Polyline(pts).ToPolylineCurve();
+                // Output as single path
+                DA.SetData(1, fullPath);
+                // Cache for viewport draw
+                _gcodePaths.Clear();
+                _gcodePaths.Add(fullPath);
+            }
             else
-                outputPaths = Array.Empty<Curve>();
-            DA.SetDataList(1, outputPaths);
+            {
+                DA.SetDataList(1, Array.Empty<Curve>());
+            }
         }
         
         /// <summary>
@@ -344,9 +434,160 @@ namespace crft
             }
             return pathGcode;
         }
+        /// <summary>
+        /// Rotate a polyline so that its start vertex aligns with the specified seam orientation.
+        /// 0 = natural, R = random, W/E = west/east (min/max X), N/S = north/south (min/max Y).
+        /// </summary>
+        private Polyline ReorientSeam(Polyline pl, char seam)
+        {
+            if (pl == null || pl.Count < 2) return pl;
+            int n = pl.Count;
+            int bestIdx = 0;
+            if (seam == 'R')
+            {
+                bestIdx = new Random().Next(n);
+            }
+            else if (seam != '0')
+            {
+                bool minimize = (seam == 'W' || seam == 'N');
+                Func<Point3d, double> val;
+                switch (seam)
+                {
+                    case 'W': val = p => p.X; break;
+                    case 'E': val = p => p.X; minimize = false; break;
+                    case 'N': val = p => p.Y; break;
+                    case 'S': val = p => p.Y; minimize = false; break;
+                    default: return pl;
+                }
+                double opt = minimize ? double.MaxValue : double.MinValue;
+                for (int i = 0; i < n; i++)
+                {
+                    double v = val(pl[i]);
+                    if ((minimize && v < opt) || (!minimize && v > opt))
+                    {
+                        opt = v;
+                        bestIdx = i;
+                    }
+                }
+            }
+            // rotate points
+            var res = new Polyline();
+            for (int i = 0; i < n; i++)
+                res.Add(pl[(bestIdx + i) % n]);
+            return res;
+        }
+        /// <summary>
+        /// Builds a connected preview path across multiple polylines: adds each polyline and a travel line between them.
+        /// </summary>
+        private List<Curve> ConnectPlines(List<Polyline> plines)
+        {
+            var curves = new List<Curve>();
+            if (plines == null || plines.Count == 0) return curves;
+            int n = plines.Count;
+            var used = new bool[n];
+            var sequence = new List<int> { 0 };
+            used[0] = true;
+            // Nearest-neighbor ordering
+            for (int i = 1; i < n; i++)
+            {
+                double bestDist = double.MaxValue;
+                int best = -1;
+                var prevPl = plines[sequence[i - 1]];
+                var lastPt = prevPl[prevPl.Count - 1];
+                for (int j = 0; j < n; j++)
+                {
+                    if (used[j]) continue;
+                    var candPl = plines[j];
+                    // measure dist to its first point
+                    double d = lastPt.DistanceTo(candPl[0]);
+                    if (d < bestDist)
+                    {
+                        bestDist = d;
+                        best = j;
+                    }
+                }
+                if (best < 0) break;
+                sequence.Add(best);
+                used[best] = true;
+            }
+            // Build curves in order
+            for (int k = 0; k < sequence.Count; k++)
+            {
+                var pl = plines[sequence[k]];
+                // add extrusion path
+                curves.Add(pl.ToPolylineCurve());
+                // add travel to next
+                if (k + 1 < sequence.Count)
+                {
+                    var nextPl = plines[sequence[k + 1]];
+                    var end = pl[pl.Count - 1];
+                    var start = nextPl[0];
+                    curves.Add(new LineCurve(end, start));
+                }
+            }
+            return curves;
+        }
 
         protected override System.Drawing.Bitmap Icon => null;
 
         public override Guid ComponentGuid => new Guid("d2accf38-8c3e-4f56-a5d9-123456789abc");
+        // Preview: draw build volume and G-code paths
+        public override void DrawViewportMeshes(IGH_PreviewArgs args)
+        {
+            // Draw bottom build platform as shaded rectangle
+            if (_areaWidth > 0 && _areaDepth > 0)
+            {
+                var mesh = new Mesh();
+                mesh.Vertices.Add(0, 0, 0);
+                mesh.Vertices.Add(_areaWidth, 0, 0);
+                mesh.Vertices.Add(_areaWidth, _areaDepth, 0);
+                mesh.Vertices.Add(0, _areaDepth, 0);
+                mesh.Faces.AddFace(0, 1, 2, 3);
+                mesh.Normals.ComputeNormals();
+                // Draw shaded bottom platform in green
+                var mat = new DisplayMaterial();
+                mat.Diffuse = Color.Green;
+                mat.Transparency = 0.7f;
+                args.Display.DrawMeshShaded(mesh, mat);
+            }
+            base.DrawViewportMeshes(args);
+        }
+
+        public override void DrawViewportWires(IGH_PreviewArgs args)
+        {
+            // Draw build volume edges in blue
+            var corners = new Point3d[] {
+                new Point3d(0, 0, 0),
+                new Point3d(_areaWidth, 0, 0),
+                new Point3d(_areaWidth, _areaDepth, 0),
+                new Point3d(0, _areaDepth, 0)
+            };
+            // Bottom rectangle
+            for (int i = 0; i < 4; i++)
+                args.Display.DrawLine(new Line(corners[i], corners[(i + 1) % 4]), Color.Blue, 1);
+            // Top rectangle
+            for (int i = 0; i < 4; i++)
+            {
+                var p0 = new Point3d(corners[i].X, corners[i].Y, _areaHeight);
+                var p1 = new Point3d(corners[(i + 1) % 4].X, corners[(i + 1) % 4].Y, _areaHeight);
+                args.Display.DrawLine(new Line(p0, p1), Color.Blue, 1);
+            }
+            // Vertical edges
+            for (int i = 0; i < 4; i++)
+            {
+                var p0 = corners[i];
+                var p1 = new Point3d(corners[i].X, corners[i].Y, _areaHeight);
+                args.Display.DrawLine(new Line(p0, p1), Color.Blue, 1);
+            }
+            // Draw G-code paths: green inside, red if outside
+            foreach (var crv in _gcodePaths)
+            {
+                var bb = crv.GetBoundingBox(false);
+                bool outside = bb.Min.X < 0 || bb.Min.Y < 0 || bb.Max.X > _areaWidth || bb.Max.Y > _areaDepth;
+                var col = outside ? Color.Red : Color.Green;
+                args.Display.DrawCurve(crv, col, 2);
+            }
+            base.DrawViewportWires(args);
+        }
     }
 }

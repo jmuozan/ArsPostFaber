@@ -11,6 +11,7 @@
         "dependencies": {
           "Grasshopper": "8.0.23304.9001",
           "Mediapipe": "1.0.0.1",
+          "Microsoft.CSharp": "4.7.0",
           "Microsoft.ML.OnnxRuntime": "1.16.3",
           "Microsoft.NETFramework.ReferenceAssemblies.net48": "1.0.3",
           "Newtonsoft.Json": "13.0.3",
@@ -19,6 +20,7 @@
           "OpenCvSharp4.runtime.osx.10.15-universal": "4.7.0.20230224",
           "Python.Runtime": "2.7.9",
           "SerialPortStream": "2.4.2",
+          "System.CodeDom": "7.0.0",
           "System.Drawing.Common": "8.0.0",
           "System.IO.Ports": "7.0.0"
         },
@@ -39,6 +41,7 @@
           }
         }
       },
+      "Microsoft.CSharp/4.7.0": {},
       "Microsoft.Extensions.Logging.Abstractions/1.1.2": {
         "dependencies": {
           "NETStandard.Library": "1.6.1"
@@ -411,6 +414,14 @@
           "System.Resources.ResourceManager": "4.3.0",
           "System.Runtime": "4.3.0",
           "System.Threading": "4.3.0"
+        }
+      },
+      "System.CodeDom/7.0.0": {
+        "runtime": {
+          "lib/net7.0/System.CodeDom.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.0.22.51805"
+          }
         }
       },
       "System.Collections/4.3.0": {
@@ -1180,6 +1191,13 @@
       "path": "mediapipe/1.0.0.1",
       "hashPath": "mediapipe.1.0.0.1.nupkg.sha512"
     },
+    "Microsoft.CSharp/4.7.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-pTj+D3uJWyN3My70i2Hqo+OXixq3Os2D1nJ2x92FFo6sk8fYS1m1WLNTs0Dc1uPaViH0YvEEwvzddQ7y4rhXmA==",
+      "path": "microsoft.csharp/4.7.0",
+      "hashPath": "microsoft.csharp.4.7.0.nupkg.sha512"
+    },
     "Microsoft.Extensions.Logging.Abstractions/1.1.2": {
       "type": "package",
       "serviceable": true,
@@ -1641,6 +1659,13 @@
       "sha512": "sha512-ratu44uTIHgeBeI0dE8DWvmXVBSo4u7ozRZZHOMmK/JPpYyo0dAfgSiHlpiObMQ5lEtEyIXA40sKRYg5J6A8uQ==",
       "path": "system.buffers/4.3.0",
       "hashPath": "system.buffers.4.3.0.nupkg.sha512"
+    },
+    "System.CodeDom/7.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-GLltyqEsE5/3IE+zYRP5sNa1l44qKl9v+bfdMcwg+M9qnQf47wK3H0SUR/T+3N4JEQXF3vV4CSuuo0rsg+nq2A==",
+      "path": "system.codedom/7.0.0",
+      "hashPath": "system.codedom.7.0.0.nupkg.sha512"
     },
     "System.Collections/4.3.0": {
       "type": "package",

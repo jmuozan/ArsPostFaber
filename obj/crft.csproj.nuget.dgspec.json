@@ -58,6 +58,10 @@
               "target": "Package",
               "version": "[1.0.0.1, )"
             },
+            "Microsoft.CSharp": {
+              "target": "Package",
+              "version": "[4.7.0, )"
+            },
             "Microsoft.ML.OnnxRuntime": {
               "target": "Package",
               "version": "[1.16.3, )"
@@ -91,6 +95,10 @@
             "SerialPortStream": {
               "target": "Package",
               "version": "[2.4.2, )"
+            },
+            "System.CodeDom": {
+              "target": "Package",
+              "version": "[7.0.0, )"
             },
             "System.Drawing.Common": {
               "include": "Compile, Build, Native, ContentFiles, Analyzers, BuildTransitive",
