@@ -195,7 +195,7 @@ Project Link: [https://github.com/github_username/repo_name](https://github.com/
 * [Advenced 3D Printing in grasshopper](https://www.amazon.com/Advanced-3D-Printing-Grasshopper%C2%AE-Clay/dp/B086Y7CLLC)
 * [Open3D](https://www.open3d.org/html/introduction.html)
 * [Mediapipe](https://chuoling.github.io/mediapipe/solutions/holistic.html)
-* []()
+* [Brain plugin grasshopper](https://github.com/ParametricCamp/brain-plugin-grasshopper)
 * []()
 * []()
 * []()
@@ -279,7 +279,9 @@ See the `LICENSE` file for details.
 
 ## ToDo
 - [ ] Implement Depth Maps for SfM 3D reconstruction
+- [ ] solve gcode implementation
 - [ ] Sculpt module
-- [ ] local llm implementation???
-- [ ] live connection to 3d printer
+- [ ] llm vision
+- [ ] llm chat
+- [ ] llm create your own components???
 - [ ] Program simulation
