@@ -56,6 +56,8 @@
     <!-- CodeDom for dynamic compilation -->
     <PackageReference Include="System.CodeDom" Version="7.0.0" />
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
+    <!-- Roslyn compiler for cross-platform code generation -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.6.0" />
   </ItemGroup>
   
   <ItemGroup>

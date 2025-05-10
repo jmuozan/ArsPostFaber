@@ -16,7 +16,7 @@ namespace crft
         public MeshContoursComponent()
           : base("Mesh Contours", "Contours",
               "Compute slicing contours from mesh or brep",
-              "crft", "Slice")
+              "crft", "Geometry")
         { }
 
         protected override void RegisterInputParams(GH_InputParamManager p)

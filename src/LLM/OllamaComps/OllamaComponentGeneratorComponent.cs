@@ -5,21 +5,24 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Grasshopper.Kernel;
 using System.Text.Json;
-using System.CodeDom.Compiler;
-using Microsoft.CSharp;
+// removed CodeDOM-based compilation
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using System.Linq;
+using System.Collections.Generic;
 using Rhino;
-using Brain.Templates;
+using LLM.Templates;
 using Grasshopper.GUI.Canvas;
 using System.Drawing;
 
-namespace Brain.OllamaComps
+namespace LLM.OllamaComps
 {
     public class OllamaComponentMakerComponent : GH_Component_HTTPAsync
     {
         public OllamaComponentMakerComponent()
           : base("Create GH Component", "GHCreate",
               "Generates and compiles a Grasshopper component via Ollama",
-              "Brain", "LLM") { }
+              "crft", "LLM") { }
         /// <summary>
         /// Automatically add and wire an OllamaModelParam dropdown on placement.
         /// </summary>
@@ -44,7 +47,7 @@ namespace Brain.OllamaComps
             pManager.AddTextParameter("Description", "D", "Natural-language description of the component", GH_ParamAccess.item);
             pManager.AddTextParameter("Component Name", "N", "Optional component class/name", GH_ParamAccess.item, string.Empty);
             pManager[3].Optional = true;
-            pManager.AddTextParameter("Category", "C", "Grasshopper ribbon category", GH_ParamAccess.item, "Brain");
+            pManager.AddTextParameter("Category", "C", "Grasshopper ribbon category", GH_ParamAccess.item, "crft");
             pManager.AddTextParameter("Subcategory", "S", "Grasshopper ribbon subcategory", GH_ParamAccess.item, "LLM");
             pManager.AddNumberParameter("Temperature", "T", "Generation temperature (0-1)", GH_ParamAccess.item, 0.7);
             pManager.AddIntegerParameter("Max Tokens", "MT", "Maximum number of tokens to generate", GH_ParamAccess.item, 2048);
@@ -167,6 +170,15 @@ namespace Brain.OllamaComps
                 if (cleanCode.EndsWith("```"))
                     cleanCode = cleanCode[..cleanCode.LastIndexOf("```")];
                 cleanCode = cleanCode.Trim();
+                // Remove any leading/trailing HTML/XML tags or metadata lines (e.g., <think> wrappers)
+                var lines = cleanCode.Split(new[] {'\r','\n'}, StringSplitOptions.RemoveEmptyEntries).ToList();
+                // Strip leading tags
+                while (lines.Count > 0 && lines[0].TrimStart().StartsWith("<") && lines[0].Contains(">"))
+                    lines.RemoveAt(0);
+                // Strip trailing tags
+                while (lines.Count > 0 && lines[^1].TrimEnd().StartsWith("<") && lines[^1].Contains(">"))
+                    lines.RemoveAt(lines.Count - 1);
+                cleanCode = string.Join("\n", lines).Trim();
                 string className = ExtractClassName(cleanCode);
                 string csPath = SaveComponentCode(cleanCode, className);
                 string assemblyPath = Path.ChangeExtension(csPath, ".gha");
@@ -224,27 +236,41 @@ namespace Brain.OllamaComps
         /// </summary>
         private void CompileCode(string code, string outputPath)
         {
-            var provider = new CSharpCodeProvider();
-            var parameters = new CompilerParameters
+            // Use Roslyn for cross-platform compilation
+            // Parse the source
+            var syntaxTree = CSharpSyntaxTree.ParseText(code);
+            // Gather references from loaded assemblies
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location) && File.Exists(a.Location))
+                .Select(a => a.Location)
+                .Distinct();
+            var refs = assemblies.Select(path => MetadataReference.CreateFromFile(path)).ToList();
+            // Explicitly ensure Grasshopper, GH_IO, and plugin assembly are referenced
+            try
             {
-                GenerateExecutable = false,
-                OutputAssembly = outputPath,
-                GenerateInMemory = false
-            };
-            parameters.ReferencedAssemblies.Add("System.dll");
-            parameters.ReferencedAssemblies.Add("System.Core.dll");
-            parameters.ReferencedAssemblies.Add("System.Drawing.dll");
-            string rhinoDir = Path.GetDirectoryName(typeof(Rhino.RhinoApp).Assembly.Location) ?? string.Empty;
-            parameters.ReferencedAssemblies.Add(Path.Combine(rhinoDir, "Rhino.dll"));
-            parameters.ReferencedAssemblies.Add(Path.Combine(rhinoDir, "Grasshopper.dll"));
-            parameters.ReferencedAssemblies.Add(Path.Combine(rhinoDir, "GH_IO.dll"));
-            parameters.ReferencedAssemblies.Add(Assembly.GetExecutingAssembly().Location);
-            CompilerResults results = provider.CompileAssemblyFromSource(parameters, code);
-            if (results.Errors.HasErrors)
+                var ghLoc = typeof(Grasshopper.Kernel.GH_Component).Assembly.Location;
+                if (File.Exists(ghLoc)) refs.Add(MetadataReference.CreateFromFile(ghLoc));
+                var ghIoAsm = AppDomain.CurrentDomain.GetAssemblies()
+                    .FirstOrDefault(a => a.GetName().Name.Equals("GH_IO", StringComparison.OrdinalIgnoreCase));
+                if (ghIoAsm != null && File.Exists(ghIoAsm.Location))
+                    refs.Add(MetadataReference.CreateFromFile(ghIoAsm.Location));
+                var pluginAsm = Assembly.GetExecutingAssembly().Location;
+                if (File.Exists(pluginAsm)) refs.Add(MetadataReference.CreateFromFile(pluginAsm));
+            }
+            catch { /* best-effort references */ }
+            // Create compilation
+            var compilation = CSharpCompilation.Create(
+                Path.GetFileNameWithoutExtension(outputPath),
+                new[] { syntaxTree },
+                refs,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            var result = compilation.Emit(outputPath);
+            if (!result.Success)
             {
-                var sb = new StringBuilder("Compilation errors:");
-                foreach (CompilerError err in results.Errors)
-                    sb.AppendLine($"Line {err.Line}: {err.ErrorText}");
+                var failures = result.Diagnostics.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+                var sb = new StringBuilder("Compilation failed:");
+                foreach (var diag in failures)
+                    sb.AppendLine(diag.ToString());
                 throw new Exception(sb.ToString());
             }
         }

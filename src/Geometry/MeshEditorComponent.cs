@@ -31,7 +31,7 @@ namespace crft
         public MeshEditorComponent()
           : base("Mesh Editor", "MeshEdit",
               "Interactive mesh editing with webcam hand tracking",
-              "crft", "Mesh")
+              "crft", "Geometry")
         {
             // Create unique temporary file paths for this instance
             string guid = Guid.NewGuid().ToString();

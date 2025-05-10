@@ -1,21 +1,24 @@
 using System;
-using System.CodeDom.Compiler;
 using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Grasshopper.Kernel;
 using Rhino;
 using System.Text;
-using Microsoft.CSharp;
+// removed CodeDOM-based compilation
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using System.Linq;
+using System.Collections.Generic;
 
-namespace Brain.OllamaComps
+namespace LLM.OllamaComps
 {
     public class ComponentCompilerComponent : GH_Component
     {
         public ComponentCompilerComponent()
           : base("Compile Component", "Compile",
               "Compiles a generated component code file into a DLL",
-              "Brain", "LLM") { }
+              "crft", "LLM") { }
 
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
@@ -83,28 +86,42 @@ namespace Brain.OllamaComps
 
         private void CompileCode(string code, string outputPath)
         {
-            var provider = new CSharpCodeProvider();
-            var parameters = new CompilerParameters
+            // Use Roslyn to compile on all platforms
+            // Parse the source
+            var syntaxTree = CSharpSyntaxTree.ParseText(code);
+            // Use all currently loaded assemblies as references (cross-platform)
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location) && File.Exists(a.Location))
+                .Select(a => a.Location)
+                .Distinct();
+            var refs = assemblies.Select(path => MetadataReference.CreateFromFile(path)).ToList();
+            // Explicitly ensure Grasshopper, GH_IO, and plugin assembly are referenced
+            try
             {
-                GenerateExecutable = false,
-                OutputAssembly = outputPath,
-                GenerateInMemory = false
-            };
-            parameters.ReferencedAssemblies.Add("System.dll");
-            parameters.ReferencedAssemblies.Add("System.Core.dll");
-            parameters.ReferencedAssemblies.Add("System.Drawing.dll");
-            string rhinoDir = Path.GetDirectoryName(typeof(Rhino.RhinoApp).Assembly.Location) ?? string.Empty;
-            parameters.ReferencedAssemblies.Add(Path.Combine(rhinoDir, "Rhino.dll"));
-            parameters.ReferencedAssemblies.Add(Path.Combine(rhinoDir, "Grasshopper.dll"));
-            parameters.ReferencedAssemblies.Add(Path.Combine(rhinoDir, "GH_IO.dll"));
-            parameters.ReferencedAssemblies.Add(Assembly.GetExecutingAssembly().Location);
-            CompilerResults results = provider.CompileAssemblyFromSource(parameters, code);
-            if (results.Errors.HasErrors)
+                var ghLoc = typeof(Grasshopper.Kernel.GH_Component).Assembly.Location;
+                if (File.Exists(ghLoc)) refs.Add(MetadataReference.CreateFromFile(ghLoc));
+                var ghIoAsm = AppDomain.CurrentDomain.GetAssemblies()
+                    .FirstOrDefault(a => a.GetName().Name.Equals("GH_IO", StringComparison.OrdinalIgnoreCase));
+                if (ghIoAsm != null && File.Exists(ghIoAsm.Location))
+                    refs.Add(MetadataReference.CreateFromFile(ghIoAsm.Location));
+                var pluginAsm = Assembly.GetExecutingAssembly().Location;
+                if (File.Exists(pluginAsm)) refs.Add(MetadataReference.CreateFromFile(pluginAsm));
+            }
+            catch { /* best-effort references */ }
+            // Create compilation
+            var compilation = CSharpCompilation.Create(
+                Path.GetFileNameWithoutExtension(outputPath),
+                new[] { syntaxTree },
+                refs,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            var result = compilation.Emit(outputPath);
+            if (!result.Success)
             {
-                var errors = new StringBuilder("Compilation errors:");
-                foreach (CompilerError error in results.Errors)
-                    errors.AppendLine($"Line {error.Line}: {error.ErrorText}");
-                throw new Exception(errors.ToString());
+                var failures = result.Diagnostics.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+                var sb = new StringBuilder("Compilation failed:");
+                foreach (var diag in failures)
+                    sb.AppendLine(diag.ToString());
+                throw new Exception(sb.ToString());
             }
         }
 

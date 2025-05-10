@@ -21,7 +21,7 @@ namespace crft
         public SAMComponent()
           : base("SAM UI", "SAM",
               "Launch the SAM2 segmentation interface",
-              "crft", "Segment")
+              "crft", "Scan")
         {
         }
 

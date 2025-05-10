@@ -25,7 +25,7 @@ namespace crft
         private List<Curve> _gcodePaths = new List<Curve>();
         public GCodeGeneratorComponent()
           : base("GCode Generator", "GGen",
-              "Generate simple G-code by slicing geometry", "crft", "Control")
+              "Generate simple G-code by slicing geometry", "crft", "Geometry")
         {
         }
 

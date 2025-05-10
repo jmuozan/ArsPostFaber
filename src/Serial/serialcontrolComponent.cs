@@ -29,7 +29,7 @@ namespace crft
 
         public SerialControlComponent()
           : base("Serial Control", "SerialControl",
-              "Send GCode commands over serial port", "crft", "Control")
+              "Send GCode commands over serial port", "crft", "Serial")
         {
         }
 

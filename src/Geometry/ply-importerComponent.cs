@@ -16,7 +16,7 @@ namespace PlyImporter
         public PlyImporterComponent()
           : base("PLY Importer", "PLYImp",
               "Imports a .ply file from a specified path as point cloud data",
-              "Mesh", "Import")
+              "crft", "Geometry")
         {
         }
 

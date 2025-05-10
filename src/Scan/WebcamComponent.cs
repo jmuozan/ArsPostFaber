@@ -221,7 +221,7 @@ namespace crft
         public WebcamComponent()
           : base("Webcam", "Webcam", 
               "Captures and displays webcam video feed with recording capability",
-              "Display", "Preview")
+              "crft", "Scan")
         {
             // Use unique ID for temporary frame path
             _tempImagePath = Path.Combine(Path.GetTempPath(), 
