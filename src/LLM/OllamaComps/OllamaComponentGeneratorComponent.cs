@@ -19,6 +19,19 @@ namespace LLM.OllamaComps
 {
     public class OllamaComponentMakerComponent : GH_Component_HTTPAsync
     {
+        // Tracks compilation iterations
+        private int _compileAttempts = 0;
+        private const int _maxCompileAttempts = 3;
+        // Store last request details for retry
+        private string _lastUrl = string.Empty;
+        private string _lastBody = string.Empty;
+        // Store parameters for retry prompt
+        private string _model = string.Empty;
+        private double _temperature = 0.7;
+        private int _maxTokens = 2048;
+        private int _timeoutMs = 60000;
+        private string _systemPrompt = string.Empty;
+        private string _userPrompt = string.Empty;
         public OllamaComponentMakerComponent()
           : base("Create GH Component", "GHCreate",
               "Generates and compiles a Grasshopper component via Ollama",
@@ -155,6 +168,17 @@ namespace LLM.OllamaComps
             string body = JsonSerializer.Serialize(requestPayload);
             _currentState = RequestState.Requesting;
             this.Message = "Generating Component...";
+            // Store request details for potential retries
+            _lastUrl = url;
+            _lastBody = body;
+            _compileAttempts = 0;
+            _model = model;
+            _temperature = temperature;
+            _maxTokens = maxTokens;
+            _timeoutMs = timeout;
+            _systemPrompt = systemPrompt;
+            _userPrompt = userPrompt;
+            // Send initial generation request
             POSTAsync(url, body, "application/json", string.Empty, timeout);
         }
 
@@ -182,17 +206,50 @@ namespace LLM.OllamaComps
                 string className = ExtractClassName(cleanCode);
                 string csPath = SaveComponentCode(cleanCode, className);
                 string assemblyPath = Path.ChangeExtension(csPath, ".gha");
+                // Attempt compilation
                 bool success = true;
+                Exception compileEx = null;
                 try
                 {
                     CompileCode(cleanCode, assemblyPath);
                 }
-                catch (Exception exCompile)
+                catch (Exception ex)
                 {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Compilation failed: " + exCompile.Message);
-                    assemblyPath = string.Empty;
+                    compileEx = ex;
                     success = false;
                 }
+                // Handle compile failures with retry via LLM
+                if (!success && _compileAttempts < _maxCompileAttempts)
+                {
+                    _compileAttempts++;
+                    string errMsg = compileEx?.Message ?? "Unknown compilation error";
+                    // Build retry prompt
+                    string retryUser = $"The previously generated component failed to compile with errors:\n{errMsg}\nPlease provide corrected full C# code only.";
+                    string retryPrompt = _systemPrompt + "\n" + retryUser;
+                    var retryPayload = new
+                    {
+                        model = _model,
+                        prompt = retryPrompt,
+                        max_tokens = _maxTokens,
+                        temperature = _temperature,
+                        stream = false
+                    };
+                    string retryBody = JsonSerializer.Serialize(retryPayload);
+                    this.Message = $"Retry {_compileAttempts}/{_maxCompileAttempts}: fixing compile errors...";
+                    _currentState = RequestState.Requesting;
+                    // Send retry request
+                    POSTAsync(_lastUrl, retryBody, "application/json", string.Empty, _timeoutMs);
+                    _lastBody = retryBody;
+                    // Prevent setting outputs now, wait for next response
+                    _shouldExpire = false;
+                    return;
+                }
+                if (!success)
+                {
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Compilation failed after retries: " + (compileEx?.Message ?? ""));
+                    assemblyPath = string.Empty;
+                }
+                // Output results
                 DA.SetData(0, cleanCode);
                 DA.SetData(1, className);
                 DA.SetData(2, csPath);
