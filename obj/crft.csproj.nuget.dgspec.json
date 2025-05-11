@@ -92,6 +92,10 @@
               "target": "Package",
               "version": "[4.7.0.20230224, )"
             },
+            "PdfPig": {
+              "target": "Package",
+              "version": "[0.1.9, )"
+            },
             "Python.Runtime": {
               "target": "Package",
               "version": "[2.7.9, )"

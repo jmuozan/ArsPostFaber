@@ -23,14 +23,20 @@
   <ItemGroup>
     <!-- Exclude Segment-Anything folder from build since it contains WPF code -->
     <Compile Remove="Segment-Anything\**" />
-      <!-- Exclude sim folder (examples) from build until integrated -->
+    <!-- Exclude sim folder (examples) from build until integrated -->
     <EmbeddedResource Remove="Segment-Anything\**" />
     <None Remove="Segment-Anything\**" />
-    
+
     <!-- Exclude mp folder from build since it contains duplicate definitions -->
     <Compile Remove="mp\**" />
     <EmbeddedResource Remove="mp\**" />
     <None Remove="mp\**" />
+  </ItemGroup>
+  <!-- Exclude auto-generated components from build -->
+  <ItemGroup>
+    <Compile Remove="GeneratedComponents/**/*.cs" />
+    <!-- Also remove any generated .cs files under GeneratedComponents at any depth -->
+    <Compile Remove="**/GeneratedComponents/**/*.cs" />
   </ItemGroup>
   
   <PropertyGroup>
@@ -58,6 +64,8 @@
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
     <!-- Roslyn compiler for cross-platform code generation -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.6.0" />
+    <!-- PDF context extraction -->
+    <PackageReference Include="PdfPig" Version="0.1.9" />
   </ItemGroup>
   
   <ItemGroup>
@@ -104,12 +112,6 @@
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" ExcludeAssets="runtime" />
   </ItemGroup>
   
-  <!-- macOS-specific references - commented out to use mock classes instead
-  <ItemGroup Condition="'$(OS)' != 'Windows_NT'">
-    <PackageReference Include="Xamarin.Mac" Version="1.0.0" />
-    <PackageReference Include="Xamarin.Essentials" Version="1.7.5" />
-  </ItemGroup>
-  -->
 
   <!-- Embed Mesh Editor Python scripts as embedded resources -->
   <ItemGroup>

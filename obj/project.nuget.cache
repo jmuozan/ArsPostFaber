@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "lEWld1knayA=",
+  "dgSpecHash": "PxSdaSF5570=",
   "success": true,
   "projectFilePath": "/Users/jorgemuyo/Desktop/crft/crft.csproj",
   "expectedPackageFiles": [
@@ -24,6 +24,7 @@
     "/Users/jorgemuyo/.nuget/packages/opencvsharp4/4.10.0.20241108/opencvsharp4.4.10.0.20241108.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/opencvsharp4.extensions/4.10.0.20241108/opencvsharp4.extensions.4.10.0.20241108.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/opencvsharp4.runtime.osx.10.15-universal/4.7.0.20230224/opencvsharp4.runtime.osx.10.15-universal.4.7.0.20230224.nupkg.sha512",
+    "/Users/jorgemuyo/.nuget/packages/pdfpig/0.1.9/pdfpig.0.1.9.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/python.runtime/2.7.9/python.runtime.2.7.9.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/rhinocommon/8.0.23304.9001/rhinocommon.8.0.23304.9001.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/runtime.any.system.collections/4.3.0/runtime.any.system.collections.4.3.0.nupkg.sha512",

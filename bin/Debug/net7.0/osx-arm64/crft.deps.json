@@ -19,6 +19,7 @@
           "OpenCvSharp4": "4.10.0.20241108",
           "OpenCvSharp4.Extensions": "4.10.0.20241108",
           "OpenCvSharp4.runtime.osx.10.15-universal": "4.7.0.20230224",
+          "PdfPig": "0.1.9",
           "Python.Runtime": "2.7.9",
           "SerialPortStream": "2.4.2",
           "System.CodeDom": "7.0.0",
@@ -299,6 +300,38 @@
         "native": {
           "runtimes/osx-arm64/native/libOpenCvSharpExtern.dylib": {
             "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "PdfPig/0.1.9": {
+        "runtime": {
+          "lib/net6.0/UglyToad.PdfPig.Core.dll": {
+            "assemblyVersion": "0.1.9.0",
+            "fileVersion": "0.1.9.0"
+          },
+          "lib/net6.0/UglyToad.PdfPig.DocumentLayoutAnalysis.dll": {
+            "assemblyVersion": "0.1.9.0",
+            "fileVersion": "0.1.9.0"
+          },
+          "lib/net6.0/UglyToad.PdfPig.Fonts.dll": {
+            "assemblyVersion": "0.1.9.0",
+            "fileVersion": "0.1.9.0"
+          },
+          "lib/net6.0/UglyToad.PdfPig.Package.dll": {
+            "assemblyVersion": "0.1.8.0",
+            "fileVersion": "0.1.8.0"
+          },
+          "lib/net6.0/UglyToad.PdfPig.Tokenization.dll": {
+            "assemblyVersion": "0.1.9.0",
+            "fileVersion": "0.1.9.0"
+          },
+          "lib/net6.0/UglyToad.PdfPig.Tokens.dll": {
+            "assemblyVersion": "0.1.9.0",
+            "fileVersion": "0.1.9.0"
+          },
+          "lib/net6.0/UglyToad.PdfPig.dll": {
+            "assemblyVersion": "0.1.9.0",
+            "fileVersion": "0.1.9.0"
           }
         }
       },
@@ -1401,6 +1434,13 @@
       "sha512": "sha512-i2YPZ4eUNW2cHNS0rOzIzTPcYBOpXQ8GUPd83mEFglS2hBU78+6mrGPIIJHmHoisFyqxVH54BisDMnpOoUll+g==",
       "path": "opencvsharp4.runtime.osx.10.15-universal/4.7.0.20230224",
       "hashPath": "opencvsharp4.runtime.osx.10.15-universal.4.7.0.20230224.nupkg.sha512"
+    },
+    "PdfPig/0.1.9": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-VU27oq5O0rpD+zWiD639xXkSHtsNXqbPpYV0pzYg9VPhDibH1cq1i67f9DuW2WnzDVEti0HipLcZxDhdayIzGg==",
+      "path": "pdfpig/0.1.9",
+      "hashPath": "pdfpig.0.1.9.nupkg.sha512"
     },
     "Python.Runtime/2.7.9": {
       "type": "package",

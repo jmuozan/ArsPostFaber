@@ -56,5 +56,12 @@
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.pdb
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.genruntimeconfig.cache
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/ref/crft.gha
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/UglyToad.PdfPig.Core.dll
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/UglyToad.PdfPig.DocumentLayoutAnalysis.dll
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/UglyToad.PdfPig.Fonts.dll
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/UglyToad.PdfPig.Package.dll
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/UglyToad.PdfPig.Tokenization.dll
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/UglyToad.PdfPig.Tokens.dll
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/UglyToad.PdfPig.dll
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.sourcelink.json
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.csproj.Up2Date
