@@ -196,16 +196,6 @@ Project Link: [https://github.com/github_username/repo_name](https://github.com/
 * [Open3D](https://www.open3d.org/html/introduction.html)
 * [Mediapipe](https://chuoling.github.io/mediapipe/solutions/holistic.html)
 * [Brain plugin grasshopper](https://github.com/ParametricCamp/brain-plugin-grasshopper)
-* []()
-* []()
-* []()
-* []()
-* []()
-* []()
-* []()
-* []()
-* []()
-* []()
 
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -282,6 +272,6 @@ See the `LICENSE` file for details.
 - [ ] solve gcode implementation
 - [ ] Sculpt module
 - [ ] llm vision
-- [ ] llm chat
+- [x] llm chat
 - [ ] llm create your own components???
 - [ ] Program simulation
