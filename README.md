@@ -34,10 +34,10 @@
     <img src="docs/images/parasite.png" alt="Logo" width="100%">
   </a>
 
-<h3 align="center">crft</h3>
+<h3 align="center">EndoFab</h3>
 
   <p align="center">
-    project_description
+    (internal cohabitation)
     <br />
     <a href="https://github.com/github_username/repo_name"><strong>Explore the docs »</strong></a>
     <br />
