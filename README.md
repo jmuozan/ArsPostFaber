@@ -31,7 +31,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/github_username/repo_name">
-    <img src="docs/images/parasite.png" alt="Logo" width="80" height="80">
+    <img src="docs/images/parasite.png" alt="Logo" width="800">
   </a>
 
 <h3 align="center">crft</h3>
