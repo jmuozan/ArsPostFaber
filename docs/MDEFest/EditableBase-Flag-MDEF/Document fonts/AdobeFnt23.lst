@@ -1,0 +1,37 @@
+%!Adobe-FontList 1.23
+%Locale:0x409
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:Invalid
+OutlineFileName:/Users/jorgemuyo/Desktop/crft/docs/MDEFest/EditableBase-Flag-MDEF/Document fonts/AdobeFnt23.lst
+FileLength:816
+FileModTime:768753502
+%EndFont
+
+%BeginFont
+Handler:DirectoryHandler
+FontType:Type1
+FontName:ElisavaSans-BlackA
+FamilyName:Elisava Sans
+StyleName:Black A
+MenuName:Elisava Sans Bk A
+StyleBits:0
+WeightClass:900
+WidthClass:5
+AngleClass:0
+FullName:Elisava Sans Black A
+WritingScript:Roman
+OutlineFileName:/Users/jorgemuyo/Desktop/crft/docs/MDEFest/EditableBase-Flag-MDEF/Document fonts/ElisavaSans-BlackA.otf
+DataFormat:sfntData
+UsesStandardEncoding:yes
+isCFF:yes
+hasSVG:no
+hasCOLR:no
+VariableFontType:NonVariableFont
+FileLength:141760
+FileModTime:768411098
+NameArray:0,Win,1,Elisava Sans Bk A
+NameArray:0,Win,16,Elisava Sans
+%EndFont
+
