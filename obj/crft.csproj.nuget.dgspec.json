@@ -116,6 +116,10 @@
             "System.IO.Ports": {
               "target": "Package",
               "version": "[7.0.0, )"
+            },
+            "itext7": {
+              "target": "Package",
+              "version": "[7.2.5, )"
             }
           },
           "imports": [

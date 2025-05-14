@@ -23,20 +23,16 @@
   <ItemGroup>
     <!-- Exclude Segment-Anything folder from build since it contains WPF code -->
     <Compile Remove="Segment-Anything\**" />
-    <!-- Exclude sim folder (examples) from build until integrated -->
+      <!-- Exclude sim folder (examples) from build until integrated -->
     <EmbeddedResource Remove="Segment-Anything\**" />
     <None Remove="Segment-Anything\**" />
-
+    
     <!-- Exclude mp folder from build since it contains duplicate definitions -->
     <Compile Remove="mp\**" />
     <EmbeddedResource Remove="mp\**" />
     <None Remove="mp\**" />
-  </ItemGroup>
-  <!-- Exclude auto-generated components from build -->
-  <ItemGroup>
-    <Compile Remove="GeneratedComponents/**/*.cs" />
-    <!-- Also remove any generated .cs files under GeneratedComponents at any depth -->
-    <Compile Remove="**/GeneratedComponents/**/*.cs" />
+    <!-- Exclude GeneratedComponents from build as they are generated at runtime -->
+    <Compile Remove="GeneratedComponents\**\*.cs" />
   </ItemGroup>
   
   <PropertyGroup>
@@ -66,6 +62,8 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.6.0" />
     <!-- PDF context extraction -->
     <PackageReference Include="PdfPig" Version="0.1.9" />
+    <!-- PDF Library for text extraction -->
+    <PackageReference Include="itext7" Version="7.2.5" />
   </ItemGroup>
   
   <ItemGroup>
@@ -112,6 +110,12 @@
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" ExcludeAssets="runtime" />
   </ItemGroup>
   
+  <!-- macOS-specific references - commented out to use mock classes instead
+  <ItemGroup Condition="'$(OS)' != 'Windows_NT'">
+    <PackageReference Include="Xamarin.Mac" Version="1.0.0" />
+    <PackageReference Include="Xamarin.Essentials" Version="1.7.5" />
+  </ItemGroup>
+  -->
 
   <!-- Embed Mesh Editor Python scripts as embedded resources -->
   <ItemGroup>
@@ -123,6 +127,12 @@
   <ItemGroup>
     <EmbeddedResource Include="scripts\run_sam.sh" />
     <EmbeddedResource Include="scripts\segmentanything\**\*.*" />
+  </ItemGroup>
+  <!-- Include context_for_llm folder content in output for LLM context -->
+  <ItemGroup>
+    <None Include="context_for_llm\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
