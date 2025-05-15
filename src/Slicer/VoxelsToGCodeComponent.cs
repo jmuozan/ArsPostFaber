@@ -32,6 +32,6 @@ namespace crft.Slicer
             AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "VoxelsToGCode component not yet implemented (port voxels_to_gcode.c)");
         }
 
-        public override Guid ComponentGuid => new Guid("18G2J0K7-8901-4J3E-HIJ4-7890ABCDEF12");
+        public override Guid ComponentGuid => new Guid("EC178F86-190A-48F6-B41A-C0C25851EE86");
     }
 }

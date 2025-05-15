@@ -32,6 +32,6 @@ namespace crft.Slicer
             AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "BlurVoxels component not yet implemented (port blur_voxels.c)");
         }
 
-        public override Guid ComponentGuid => new Guid("E5D9G7H4-5678-4G0B-EFG1-4567890ABCDE");
+        public override Guid ComponentGuid => new Guid("1C35FE90-82C6-4037-83CC-99D623D6B5FB");
     }
 }

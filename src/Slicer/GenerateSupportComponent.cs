@@ -33,6 +33,6 @@ namespace crft.Slicer
             AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "GenerateSupport component not yet implemented (port generate_support.c)");
         }
 
-        public override Guid ComponentGuid => new Guid("07F1I9J6-7890-4I2D-GHI3-67890ABCDEF1");
+        public override Guid ComponentGuid => new Guid("5D9BD3B3-4697-42E5-9ED2-0553A61E8069");
     }
 }

@@ -32,6 +32,6 @@ namespace crft.Slicer
             AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "AccentuateVoxels component not yet implemented (port accentuate_voxels.c)");
         }
 
-        public override Guid ComponentGuid => new Guid("F6E0H8I5-6789-4H1C-FGH2-567890ABCDEF");
+        public override Guid ComponentGuid => new Guid("36415593-C080-4E37-8EB3-C898A9C1D5AC");
     }
 }

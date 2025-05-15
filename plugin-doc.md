@@ -1,4 +1,4 @@
- Your First Plugin (Mac)
+Your First Plugin (Mac)
 macOS only
 
 by Dan Rigdon-Bel and Callum Sykes (Last updated: Friday, February 21, 2025)
