@@ -1,23 +1,6 @@
-<!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
+<!-- Template from: https://github.com/othneildrew/Best-README-Template -->
 <a name="readme-top"></a>
-<!--
-*** Thanks for checking out the Best-README-Template. If you have a suggestion
-*** that would make this better, please fork the repo and create a pull request
-*** or simply open an issue with the tag "enhancement".
-*** Don't forget to give the project a star!
-*** Thanks again! Now go create something AMAZING! :D
--->
 
-
-
-<!-- PROJECT SHIELDS -->
-<!--
-*** I'm using markdown "reference style" links for readability.
-*** Reference links are enclosed in brackets [ ] instead of parentheses ( ).
-*** See the bottom of this document for the declaration of the reference variables
-*** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
-*** https://www.markdownguide.org/basic-syntax/#reference-style-links
--->
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
@@ -25,19 +8,17 @@
 [![MIT License][license-shield]][license-url]
 [![LinkedIn][linkedin-shield]][linkedin-url]
 
-
-
-<!-- PROJECT LOGO -->
+<!-- HEADER -->
 <br />
 <div align="center">
   <a href="https://github.com/github_username/repo_name">
     <img src="docs/images/parasite.png" alt="Logo" width="100%">
   </a>
 
-<h3 align="center">EndoFab</h3>
+<h3 align="center">ArsPostFaber</h3>
 
   <p align="center">
-    (internal cohabitation)
+    Art Post Artisan
     <br />
     <a href="https://github.com/github_username/repo_name"><strong>Explore the docs »</strong></a>
     <br />
@@ -124,22 +105,15 @@ Follow these steps to set up the plugin locally.
 
 ## Usage
 ### G-code Generation
-Use the `gcode` component to generate toolpaths from slicing contours.
+
 
 ### Serial Communication
-Use the `Serial Control` component:
-1. Right-click to select the serial port.
-2. Toggle `Connect` to true to open communication.
-3. Supply G-code via `Command` and toggle `Send` to dispatch.
-4. Monitor printer `Response` and `PortEvent`.
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Roadmap
-- [ ] Depth Map support for SfM reconstruction
-- [ ] Sculpt module for mesh editing
-- [ ] Local LLM integration
-- [ ] Live 3D printer feedback
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -166,7 +140,7 @@ Don't forget to give the project a star! Thanks again!
 <!-- LICENSE -->
 ## License
 
-Distributed under the MIT License. See `LICENSE.txt` for more information.
+Distributed under the MIT License. See `LICENSE` for more information.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -175,7 +149,7 @@ Distributed under the MIT License. See `LICENSE.txt` for more information.
 <!-- CONTACT -->
 ## Contact
 
-jmuozan - [@twitter_handle](https://twitter.com/jorgemunyozz) - jmuozan@gmail.com
+jmuozan - [@jorgemunyozz](https://twitter.com/jorgemunyozz) - jmuozan@gmail.com
 
 Project Link: [https://github.com/github_username/repo_name](https://github.com/jmuozan/ArsPostFaber)
 
@@ -236,16 +210,7 @@ crft is a set of Grasshopper components for Rhino, forming a plugin that explore
 - Experimental interfaces for live machine control.
 
 ## Repository Structure
-- **BitmapParameter.cs, EventArguments.cs, HandtrackComponent.cs, MeshComponent.cs, MockClasses.cs, ply-importerComponent.cs, SAMComponent.cs, WebcamComponent.cs, WebViewEditor.cs**: Core C# files implementing the Grasshopper components and plugin logic.
-- **crft.csproj, crft.sln**: Project and solution files for .NET build.
-- **download_models.sh**: Script to download required AI/ML models.
-- **run_sam.sh**: Script to run the Segment Anything Model (SAM).
-- **mediapipe/**: Python scripts for hand tracking and computer vision.
-- **segmentanything/**: Scripts and configs for segmentation workflows.
-- **backup/**: Utility scripts and test files.
-- **bin/**: Compiled binaries and runtime files.
-- **lib/**: Native libraries (e.g., OpenCV, ONNX Runtime).
-- **Properties/**: Project configuration files.
+
 
 ## Build Instructions
 To build the plugin, run:
