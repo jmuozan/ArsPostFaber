@@ -175,9 +175,9 @@ Distributed under the MIT License. See `LICENSE.txt` for more information.
 <!-- CONTACT -->
 ## Contact
 
-Your Name - [@twitter_handle](https://twitter.com/twitter_handle) - email@email_client.com
+jmuozan - [@twitter_handle](https://twitter.com/jorgemunyozz) - jmuozan@gmail.com
 
-Project Link: [https://github.com/github_username/repo_name](https://github.com/github_username/repo_name)
+Project Link: [https://github.com/github_username/repo_name](https://github.com/jmuozan/ArsPostFaber)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -204,16 +204,16 @@ Project Link: [https://github.com/github_username/repo_name](https://github.com/
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/jmuozan/crft.svg?style=for-the-badge
-[contributors-url]: https://github.com/jmuozan/crft/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/jmuozan/crft.svg?style=for-the-badge
-[forks-url]: https://github.com/jmuozan/crft/network/members
-[stars-shield]: https://img.shields.io/github/stars/jmuozan/crft.svg?style=for-the-badge
-[stars-url]: https://github.com/jmuozan/crft/stargazers
-[issues-shield]: https://img.shields.io/github/issues/jmuozan/crft.svg?style=for-the-badge
-[issues-url]: https://github.com/jmuozan/crft/issues
-[license-shield]: https://img.shields.io/github/license/jmuozan/crft.svg?style=for-the-badge
-[license-url]: https://github.com/jmuozan/crft/blob/master/LICENSE
+[contributors-shield]: https://img.shields.io/github/contributors/jmuozan/ArsPostFaber.svg?style=for-the-badge
+[contributors-url]: https://github.com/jmuozan/ArsPostFaber/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/jmuozan/ArsPostFaber.svg?style=for-the-badge
+[forks-url]: https://github.com/jmuozan/ArsPostFaber/network/members
+[stars-shield]: https://img.shields.io/github/stars/jmuozan/ArsPostFaber.svg?style=for-the-badge
+[stars-url]: https://github.com/jmuozan/ArsPostFaber/stargazers
+[issues-shield]: https://img.shields.io/github/issues/jmuozan/ArsPostFaber.svg?style=for-the-badge
+[issues-url]: https://github.com/jmuozan/ArsPostFaber/issues
+[license-shield]: https://img.shields.io/github/license/jmuozan/ArsPostFaber.svg?style=for-the-badge
+[license-url]: https://github.com/jmuozan/ArsPostFaber/blob/master/LICENSE
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url]: https://www.linkedin.com/in/jorgemunozzanon/
 [product-screenshot]: images/screenshot.png
@@ -273,5 +273,5 @@ See the `LICENSE` file for details.
 - [ ] Sculpt module
 - [ ] llm vision
 - [x] llm chat
-- [ ] llm create your own components???
-- [ ] Program simulation
+- [x] llm create your own components???
+- [x] Program simulation
