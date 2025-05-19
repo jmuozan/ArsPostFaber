@@ -101,6 +101,38 @@ namespace crft
             var curves = lines.Select(l => new LineCurve(l)).Cast<Curve>();
             return EvenlySampleCurves(curves, totalSamples);
         }
+        /// <summary>
+        /// Sample total number of points evenly along lines, tracking original G-code command indices.
+        /// </summary>
+        private static List<Tuple<int, Point3d>> EvenlySampleLinesWithIndices(IEnumerable<Line> lines, IEnumerable<int> cmdIndices, int totalSamples)
+        {
+            var lineList = lines.ToList();
+            var idxList = cmdIndices.ToList();
+            var curves = lineList.Select(l => new LineCurve(l)).Cast<Curve>().ToList();
+            var lengths = curves.Select(c => c.GetLength()).ToList();
+            double totalLength = lengths.Sum();
+            var result = new List<Tuple<int, Point3d>>();
+            for (int i = 1; i <= totalSamples; i++)
+            {
+                double target = totalLength * i / (totalSamples + 1);
+                double acc = 0;
+                for (int j = 0; j < curves.Count; j++)
+                {
+                    var len = lengths[j];
+                    if (acc + len >= target)
+                    {
+                        double rem = target - acc;
+                        double tNorm = len > 0 ? rem / len : 0;
+                        var pt = curves[j].PointAtNormalizedLength(tNorm);
+                        int cmdIdx = j < idxList.Count ? idxList[j] : -1;
+                        result.Add(Tuple.Create(cmdIdx, pt));
+                        break;
+                    }
+                    acc += len;
+                }
+            }
+            return result;
+        }
 
         public SerialControlComponent()
           : base("Serial Control", "SerialControl",
@@ -154,8 +186,16 @@ namespace crft
             DA.GetData("Connect", ref connect);
             // Get list of commands (one string per G-code line)
             DA.GetDataList("Command", commandsList);
-            // Cache commands for preview
-            _lastCommandsList = new List<string>(commandsList);
+            // Override with any edited commands
+            if (_lastCommandsList != null && _lastCommandsList.Count > 0)
+            {
+                commandsList = new List<string>(_lastCommandsList);
+            }
+            else
+            {
+                // Cache commands for preview
+                _lastCommandsList = new List<string>(commandsList);
+            }
             DA.GetData("Reset", ref reset);
             // Get bounding box inputs
             var bboxDims = _printerBBoxDims;
@@ -473,17 +513,52 @@ namespace crft
                 };
                 foreach (var l in boxLines) segs.Add(Tuple.Create(l.From, l.To, Color.LightBlue));
             }
-            // Compute evenly spaced sample points along entire path for edit preview
-            List<Point3d> samplePts = null;
+            // Compute evenly spaced sample points along unexecuted path, tracking command indices
+            List<Tuple<int, Point3d>> editSamples = null;
             if (_samplesPerSegment > 0)
             {
-                var allLines = execTrans.Concat(execExtr).Concat(unexecTrans).Concat(unexecExtr);
-                samplePts = EvenlySampleLines(allLines, _samplesPerSegment);
+                // Only unexecuted moves
+                var unexecLines = unexecTrans.Concat(unexecExtr).ToList();
+                // Map each unexecuted line to its original G-code index
+                var cmdIndices = new List<int>();
+                for (int k = _currentLineIndex; k < commands.Count; k++)
+                {
+                    var s = commands[k].Trim();
+                    if (s.StartsWith("G0", StringComparison.OrdinalIgnoreCase) || s.StartsWith("G1", StringComparison.OrdinalIgnoreCase))
+                        cmdIndices.Add(k);
+                }
+                editSamples = EvenlySampleLinesWithIndices(unexecLines, cmdIndices, _samplesPerSegment);
             }
-            // Show preview window
+            // Show preview window and apply edits on close
             try
             {
-                var form = new PreviewEtoForm(segs, samplePts);
+                var form = new PreviewEtoForm(segs, editSamples);
+                form.Closed += (s, evt) =>
+                {
+                    if (form.EditedSamples != null)
+                    {
+                        // Update cached commands with moved points
+                        foreach (var tup in form.EditedSamples)
+                        {
+                            int cmdIdx = tup.Item1;
+                            if (cmdIdx < 0 || cmdIdx >= _lastCommandsList.Count)
+                                continue;
+                            var np = tup.Item2;
+                            var orig = _lastCommandsList[cmdIdx].Trim();
+                            var parts = orig.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).ToList();
+                            var updated = new List<string> { parts[0], $"X{np.X.ToString(CultureInfo.InvariantCulture)}", $"Y{np.Y.ToString(CultureInfo.InvariantCulture)}", $"Z{np.Z.ToString(CultureInfo.InvariantCulture)}" };
+                            foreach (var p in parts.Skip(1))
+                            {
+                                if (!p.StartsWith("X", StringComparison.OrdinalIgnoreCase) && !p.StartsWith("Y", StringComparison.OrdinalIgnoreCase) && !p.StartsWith("Z", StringComparison.OrdinalIgnoreCase))
+                                    updated.Add(p);
+                            }
+                            _lastCommandsList[cmdIdx] = string.Join(" ", updated);
+                            if (_printCommands != null && cmdIdx < _printCommands.Count)
+                                _printCommands[cmdIdx] = _lastCommandsList[cmdIdx];
+                        }
+                        ExpireSolution(true);
+                    }
+                };
                 form.Show();
             }
             catch (Exception ex)

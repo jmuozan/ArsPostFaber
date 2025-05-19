@@ -89,7 +89,7 @@ namespace LLM.OllamaComps
         private string _userPrompt = string.Empty;
         
         public OpenAIComponentGeneratorComponent()
-          : base("Create GH Component (OpenAI)", "AICreate",
+          : base("Create Component (OpenAI)", "AICreate",
               "Generates and compiles a Grasshopper component via OpenAI",
               "crft", "LLM") { }
         public override void AddedToDocument(GH_Document document)

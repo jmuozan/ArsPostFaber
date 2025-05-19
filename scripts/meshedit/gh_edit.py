@@ -49,13 +49,15 @@ class MeshEditor:
         
         # Mesh visualization configuration
         self.default_color = [1.0, 1.0, 1.0]  # Pure white
-        self.selection_color = [1.0, 0.3, 0.3]  # Red-orange
+        self.selection_color = [1.0, 1.0, 0.0]  # Bright yellow
         self.wireframe_color = [0.2, 0.2, 0.2]  # Dark gray
         
         # Interaction parameters
         self.rotation_sensitivity = 0.2
-        self.zoom_sensitivity = 0.03
+        self.zoom_sensitivity = 0.1  # wheel zoom step
         self.manipulation_sensitivity = 0.15
+        # Current zoom level for wheel events
+        self.zoom_level = 0.8
         
         # Keyboard control mapping and status
         self.KEYBOARD_CONTROLS = {
@@ -108,6 +110,32 @@ class MeshEditor:
         
         # Store original state for resets
         self.original_mesh = copy.deepcopy(self.mesh)
+        # Number of executed path segments (from host)
+        self.executedSegments = 0
+        # Extract path center points from ribbon mesh (pairs of vertices)
+        try:
+            verts = np.asarray(self.mesh.vertices)
+            count = len(verts) // 2
+            pts = []
+            for i in range(count):
+                b = verts[2 * i]
+                t = verts[2 * i + 1]
+                pts.append((b + t) / 2.0)
+            self.path_points = np.array(pts)
+            self.path_pcd = o3d.geometry.PointCloud()
+            self.path_pcd.points = o3d.utility.Vector3dVector(self.path_points)
+        except Exception:
+            self.path_points = None
+            self.path_pcd = None
+        # Create printer workspace bounding box (200x200x200 mm centered)
+        try:
+            import numpy as _np
+            min_b = _np.array([-100.0, -100.0, -100.0])
+            max_b = _np.array([ 100.0,  100.0,  100.0])
+            self.bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound=min_b, max_bound=max_b)
+            self.bbox.color = (0.7, 0.7, 0.7)
+        except Exception:
+            self.bbox = None
         
         # Initialize camera
         print("Initializing camera...")
@@ -197,8 +225,17 @@ class MeshEditor:
         # Configure basic properties
         render_option = self.renderer.get_render_option()
         render_option.background_color = [0.2, 0.2, 0.2]  # Slightly lighter background to avoid contrast with black areas
-        render_option.point_size = 8.0
-        render_option.line_width = 1.5
+        render_option.point_size = 12.0  # larger points for path visibility
+        render_option.line_width = 4.0   # thicker lines for wireframe
+        # Always show wireframe and back faces
+        try:
+            render_option.mesh_show_wireframe = True
+        except:
+            pass
+        try:
+            render_option.mesh_show_back_face = True
+        except:
+            pass
         
         # Try to force the simplest shading model (NO reflections)
         try:
@@ -234,18 +271,50 @@ class MeshEditor:
         
         # Add the mesh with our custom material
         self.renderer.add_geometry(self.mesh)
+        # Add workspace bounding box
+        if hasattr(self, 'bbox') and self.bbox is not None:
+            self.renderer.add_geometry(self.bbox)
+        # Add path points point cloud for editing visibility
+        if self.path_pcd is not None:
+            self.renderer.add_geometry(self.path_pcd)
         
         # Setup our completely custom lighting approach
         self.setup_custom_lighting()
         
         # Initialize camera
         self.view_controller = self.renderer.get_view_control()
-        self.view_controller.set_zoom(0.8)
-        self.set_front_view()
+        # Initialize zoom levels
+        self.zoom_level = 0.8
+        self.default_zoom = self.zoom_level
+        self.view_controller.set_zoom(self.zoom_level)
+        # Use centered isometric view by default
+        self.set_isometric_view()
     
     def create_custom_material(self):
-        """Create completely custom flat white material with no reflections or lighting effects."""
-        # Reset the mesh to pure solid white
+        """Create completely custom flat material; color executed vs unexecuted segments if specified."""
+        # If host provided executedSegments, color vertices accordingly
+        try:
+            if hasattr(self, 'executedSegments') and self.executedSegments is not None and self.executedSegments > 0:
+                # Build per-vertex colors: executed (green), unexecuted (red)
+                import numpy as _np
+                verts = _np.asarray(self.mesh.vertices)
+                n = len(verts)
+                # Each path point has 2 vertices (bottom/top), executedSegments gives segments count => points = segments+1
+                exec_pts = 2 * (self.executedSegments + 1)
+                colors = _np.zeros((n, 3), dtype=float)
+                for i in range(n):
+                    if i < exec_pts:
+                        colors[i] = [0.0, 1.0, 0.0]
+                    else:
+                        colors[i] = [1.0, 0.0, 0.0]
+                try:
+                    self.mesh.vertex_colors = o3d.utility.Vector3dVector(colors)
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
+        # Default: reset the mesh to pure solid white
         self.mesh.paint_uniform_color(self.default_color)
         
         # Recompute normals with a very large smoothing radius
@@ -403,7 +472,8 @@ class MeshEditor:
             {"name": "View", "x": 120, "width": 100, "active": False, "dropdown": [
                 {"name": "Front", "action": "set_front_view"},
                 {"name": "Top", "action": "set_top_view"},
-                {"name": "Side", "action": "set_side_view"}
+                {"name": "Side", "action": "set_side_view"},
+                {"name": "Isometric", "action": "set_isometric_view"}
             ]},
             {"name": "Mesh", "x": 230, "width": 100, "active": False, "dropdown": [
                 {"name": "Reset", "action": "reset_mesh"},
@@ -639,7 +709,11 @@ class MeshEditor:
     def set_front_view(self):
         """Set front view of the mesh."""
         print("Front view activated")
-        self.view_controller.set_lookat([0, 0, 0])
+        # Reset zoom and center
+        self.zoom_level = self.default_zoom
+        self.view_controller.set_zoom(self.zoom_level)
+        center = self.mesh.get_center().tolist()
+        self.view_controller.set_lookat(center)
         self.view_controller.set_front([0, 0, 1])
         self.view_controller.set_up([0, 1, 0])
         self.update_visualization()
@@ -648,7 +722,11 @@ class MeshEditor:
     def set_top_view(self):
         """Set top view of the mesh."""
         print("Top view activated")
-        self.view_controller.set_lookat([0, 0, 0])
+        # Reset zoom and center
+        self.zoom_level = self.default_zoom
+        self.view_controller.set_zoom(self.zoom_level)
+        center = self.mesh.get_center().tolist()
+        self.view_controller.set_lookat(center)
         self.view_controller.set_front([0, 1, 0])
         self.view_controller.set_up([0, 0, -1])
         self.update_visualization()
@@ -657,9 +735,27 @@ class MeshEditor:
     def set_side_view(self):
         """Set side view of the mesh."""
         print("Side view activated")
-        self.view_controller.set_lookat([0, 0, 0])
+        # Reset zoom and center
+        self.zoom_level = self.default_zoom
+        self.view_controller.set_zoom(self.zoom_level)
+        center = self.mesh.get_center().tolist()
+        self.view_controller.set_lookat(center)
         self.view_controller.set_front([1, 0, 0])
         self.view_controller.set_up([0, 1, 0])
+        self.update_visualization()
+        self.refresh_rendering()
+    
+    def set_isometric_view(self):
+        """Set a centered isometric view of the mesh to see all axes."""
+        print("Isometric view activated")
+        # Look at mesh center
+        center = self.mesh.get_center()
+        self.view_controller.set_lookat(center.tolist())
+        # Diagonal direction for isometric
+        self.view_controller.set_front([1.0, 1.0, 1.0])
+        # Up vector
+        self.view_controller.set_up([0.0, 0.0, 1.0])
+        # Refresh
         self.update_visualization()
         self.refresh_rendering()
     
@@ -739,19 +835,21 @@ class MeshEditor:
     def update_visualization(self):
         """Update mesh visualization with forced flat-white appearance with no lighting effects."""
         try:
-            # Create pure white vertex colors - use oversaturated values to ensure brightness
-            vertices = np.asarray(self.mesh.vertices)
-            num_vertices = len(vertices)
-            
-            # Use pure white color for everything
-            vertex_colors = np.ones((num_vertices, 3)) * np.array([1.0, 1.0, 1.0])
-            
-            # Only apply selection highlight
+            # Determine per-vertex colors based on executedSegments and selection
+            verts = np.asarray(self.mesh.vertices)
+            n = len(verts)
+            # Default colors: executed (green), to-be (red)
+            exec_pts = 2 * (self.executedSegments + 1)
+            vertex_colors = np.zeros((n, 3), dtype=float)
+            for i in range(n):
+                if i < exec_pts:
+                    vertex_colors[i] = [0.0, 1.0, 0.0]
+                else:
+                    vertex_colors[i] = [1.0, 0.0, 0.0]
+            # Highlight selections in bright yellow
             for idx in self.selected_vertices:
-                if 0 <= idx < num_vertices:
-                    vertex_colors[idx] = self.selection_color
-            
-            # Apply vertex colors
+                if 0 <= idx < n:
+                    vertex_colors[idx] = [1.0, 1.0, 0.0]
             self.mesh.vertex_colors = o3d.utility.Vector3dVector(vertex_colors)
             
             # Override normals to avoid black spots
@@ -815,14 +913,33 @@ class MeshEditor:
             except:
                 pass
             
-            # Update wireframe visibility based on selection state
+            # Always show wireframe for path visibility
             try:
-                render_option.mesh_show_wireframe = len(self.selected_vertices) > 0
+                render_option.mesh_show_wireframe = True
             except:
                 pass
                 
-            # Force geometry update and rerender
+            # Force geometry update and rerender mesh and bbox
             self.renderer.update_geometry(self.mesh)
+            if hasattr(self, 'bbox') and self.bbox is not None:
+                self.renderer.update_geometry(self.bbox)
+            # Update path points cloud colors and geometry
+            if self.path_pcd is not None and self.path_points is not None:
+                n = len(self.path_points)
+                colors = np.zeros((n, 3), dtype=float)
+                exec_pts = self.executedSegments + 1
+                for i in range(n):
+                    if i < exec_pts:
+                        colors[i] = [0.0, 1.0, 0.0]
+                    else:
+                        colors[i] = [1.0, 0.0, 0.0]
+                # Highlight selected points
+                for idx in self.selected_vertices:
+                    pi = idx // 2
+                    if 0 <= pi < n:
+                        colors[pi] = [1.0, 1.0, 0.0]
+                self.path_pcd.colors = o3d.utility.Vector3dVector(colors)
+                self.renderer.update_geometry(self.path_pcd)
             self.renderer.poll_events()
             self.renderer.update_renderer()
             
@@ -1130,6 +1247,19 @@ class MeshEditor:
     
     def process_mouse_event(self, event, x, y, flags, param):
         """Process mouse interaction events."""
+        # Handle mouse wheel zoom
+        if event == cv2.EVENT_MOUSEWHEEL:
+            # flags > 0 means wheel up: zoom in
+            if flags > 0:
+                self.zoom_level *= (1 + self.zoom_sensitivity)
+            # flags < 0 means wheel down: zoom out
+            else:
+                self.zoom_level /= (1 + self.zoom_sensitivity)
+            # clamp zoom level
+            self.zoom_level = max(0.01, min(self.zoom_level, 10.0))
+            self.view_controller.set_zoom(self.zoom_level)
+            self.refresh_rendering()
+            return
         # Handle help overlay behavior when clicking outside help menu
         if self.help_visible and event == cv2.EVENT_LBUTTONDOWN:
             # Only hide when clicking outside the Help menu item area
@@ -1202,9 +1332,13 @@ class MeshEditor:
                                     option = item["dropdown"][item_idx]
                                     # Execute menu action
                                     if "action" in option:
-                                        method = getattr(self, option["action"], None)
+                                        act = option["action"]
+                                        method = getattr(self, act, None)
                                         if method:
                                             method()
+                                            if act == "save_mesh":
+                                                # Close editor on save
+                                                self.application_running = False
                                 self.active_dropdown = None
                                 return
                 
@@ -1334,9 +1468,16 @@ class MeshEditor:
                     vertices = np.asarray(self.mesh.vertices)
                     before_positions = {idx: vertices[idx].copy() for idx in self.selected_vertices}
                     
-                    # Apply movement to selected vertices
+                    # Apply movement to selected vertices with bounding-box clamping
+                    minb = None; maxb = None
+                    if hasattr(self, 'bbox') and self.bbox is not None:
+                        minb = np.array(self.bbox.min_bound)
+                        maxb = np.array(self.bbox.max_bound)
                     for idx in self.selected_vertices:
-                        vertices[idx] += movement
+                        new_pos = vertices[idx] + movement
+                        if minb is not None and maxb is not None:
+                            new_pos = np.minimum(np.maximum(new_pos, minb), maxb)
+                        vertices[idx] = new_pos
                     
                     # Save for undo history
                     after_positions = {idx: vertices[idx].copy() for idx in self.selected_vertices}
@@ -1555,9 +1696,16 @@ class MeshEditor:
             vertices = np.asarray(self.mesh.vertices)
             before_positions = {idx: vertices[idx].copy() for idx in self.selected_vertices}
             
-            # Apply movement to selected vertices
+            # Apply movement to selected vertices with bounding-box clamping
+            minb = None; maxb = None
+            if hasattr(self, 'bbox') and self.bbox is not None:
+                minb = np.array(self.bbox.min_bound)
+                maxb = np.array(self.bbox.max_bound)
             for idx in self.selected_vertices:
-                vertices[idx] += movement
+                new_pos = vertices[idx] + movement
+                if minb is not None and maxb is not None:
+                    new_pos = np.minimum(np.maximum(new_pos, minb), maxb)
+                vertices[idx] = new_pos
             
             # Save for undo history
             after_positions = {idx: vertices[idx].copy() for idx in self.selected_vertices}
@@ -1693,6 +1841,12 @@ def parse_args():
                         help='Path to output modified mesh file')
     parser.add_argument('--device', type=int, default=0,
                         help='Camera device index (default: 0)')
+    parser.add_argument('--executed', type=int, default=0,
+                        help='Number of executed path segments (for coloring)')
+    parser.add_argument('--bbox_min', type=str, default=None,
+                        help='Bounding box minimum corner as "x,y,z"')
+    parser.add_argument('--bbox_max', type=str, default=None,
+                        help='Bounding box maximum corner as "x,y,z"')
     return parser.parse_args()
 
 def main():
@@ -1702,8 +1856,19 @@ def main():
         # Parse command-line arguments
         args = parse_args()
         
-        # Create editor with input mesh path and device index
+        # Create editor with input mesh path
         editor = MeshEditor(args.input)
+        # Apply executed segments count for coloring
+        editor.executedSegments = getattr(args, 'executed', 0)
+        # Override bounding box if provided via arguments
+        if getattr(args, 'bbox_min', None) and getattr(args, 'bbox_max', None):
+            try:
+                bmin = [float(v) for v in args.bbox_min.split(',')]
+                bmax = [float(v) for v in args.bbox_max.split(',')]
+                editor.bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound=bmin, max_bound=bmax)
+                editor.bbox.color = (0.7, 0.7, 0.7)
+            except Exception as e:
+                print(f"Error parsing bounding box args: {e}")
         
         # Configure output path
         editor._output_path = args.output
