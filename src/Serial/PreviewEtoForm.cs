@@ -37,6 +37,12 @@ namespace crft
         private int _selectedSegIdx;
         private bool _selectedIsEnd;
         private double _origDragZ;
+        // Selection mode state
+        private enum Mode { Edit, Select }
+        private Mode _mode = Mode.Edit;
+        private bool _isLassoing = false;
+        private List<PointF> _lassoPath = new List<PointF>();
+        private List<int> _selectedSampleIndices = new List<int>();
 
         public PreviewEtoForm(List<Tuple<Point3d, Point3d, System.Drawing.Color>> segments)
         {
@@ -66,13 +72,34 @@ namespace crft
             _canvas.MouseMove += Canvas_MouseMove;
             _canvas.MouseUp += Canvas_MouseUp;
             _canvas.MouseWheel += Canvas_MouseWheel;
-            // Edit mode toggle
-            var editToggle = new CheckBox { Text = "Edit Mode" };
-            editToggle.CheckedChanged += (s, e) => { _isEditing = editToggle.Checked == true; };
+            // Toolbar: Reset view button and mode selector
+            var resetButton = new Button { Text = "Reset View" };
+            resetButton.Click += (s, e) =>
+            {
+                _yaw = MathF.PI / 4f;
+                _pitch = MathF.PI / 6f;
+                _panX = 0;
+                _panY = 0;
+                ComputeBounds();
+                _canvas.Invalidate();
+            };
+            var modeSelector = new ComboBox { Items = { "Edit", "Select" }, SelectedIndex = 0 };
+            modeSelector.SelectedIndexChanged += (s, e) =>
+            {
+                _mode = modeSelector.SelectedIndex == 0 ? Mode.Edit : Mode.Select;
+                _isLassoing = false;
+                _lassoPath.Clear();
+                _selectedSampleIndices.Clear();
+                _canvas.Invalidate();
+            };
             // Layout: toolbar and canvas in a vertical DynamicLayout
             var layout = new DynamicLayout { DefaultSpacing = new Size(5, 5), Padding = new Padding(5) };
             layout.BeginVertical();
-            layout.Add(editToggle);
+            // Toolbar row
+            layout.Add(new TableLayout
+            {
+                Rows = { new TableRow(resetButton, modeSelector) }
+            });
             layout.Add(_canvas, yscale: true);
             layout.EndVertical();
             Content = layout;
@@ -123,15 +150,23 @@ namespace crft
                 using var pen = new Pen(ConvertColor(seg.Color), 2);
                 g.DrawLine(pen, a, b);
             }
-            // Draw sample points
+            // Draw sample points, highlighting selections
             if (_samplePoints != null)
             {
-                using var brush = new SolidBrush(ConvertColor(System.Drawing.Color.LimeGreen));
-                foreach (var sp in _samplePoints)
+                using var brushNorm = new SolidBrush(ConvertColor(System.Drawing.Color.LimeGreen));
+                using var brushSel = new SolidBrush(ConvertColor(System.Drawing.Color.Red));
+                for (int i = 0; i < _samplePoints.Count; i++)
                 {
-                    var proj = Project(sp, cx, cy);
+                    var proj = Project(_samplePoints[i], cx, cy);
+                    var brush = _selectedSampleIndices.Contains(i) ? brushSel : brushNorm;
                     g.FillEllipse(brush, proj.X - 3, proj.Y - 3, 6, 6);
                 }
+            }
+            // Draw lasso polygon in select mode
+            if (_mode == Mode.Select && _lassoPath.Count > 1)
+            {
+                using var penLasso = new Pen(Colors.Blue, 1);
+                g.DrawPolygon(penLasso, _lassoPath.ToArray());
             }
         }
 
@@ -181,18 +216,27 @@ namespace crft
         private void Canvas_MouseDown(object sender, MouseEventArgs e)
         {
             _lastMouse = e.Location;
-            // Begin drag in edit mode with right-click
-            if (_isEditing && e.Buttons == MouseButtons.Alternate)
+            // Mode-dependent mouse down
+            if (_mode == Mode.Edit)
             {
-                // Attempt to select endpoint
-                BeginDrag(e.Location);
+                if (e.Buttons == MouseButtons.Alternate)
+                {
+                    // Begin endpoint drag
+                    BeginDrag(e.Location);
+                }
+                else if (e.Buttons == MouseButtons.Primary)
+                {
+                    _rotating = true;
+                }
             }
-            else if (!_isEditing)
+            else if (_mode == Mode.Select)
             {
                 if (e.Buttons == MouseButtons.Primary)
-                    _rotating = true;
-                else if (e.Buttons == MouseButtons.Alternate)
-                    _panning = true;
+                {
+                    _isLassoing = true;
+                    _lassoPath.Clear();
+                    _lassoPath.Add(e.Location);
+                }
             }
         }
 
@@ -236,8 +280,16 @@ namespace crft
 
         private void Canvas_MouseMove(object sender, MouseEventArgs e)
         {
+            // Handle lasso drawing in select mode
+            if (_mode == Mode.Select && _isLassoing)
+            {
+                _lassoPath.Add(e.Location);
+                _canvas.Invalidate();
+                _lastMouse = e.Location;
+                return;
+            }
             // Handle dragging in edit mode
-            if (_isDragging)
+            if (_mode == Mode.Edit && _isDragging)
             {
                 // Compute new world point at constant Z
                 var newPt = Unproject(e.Location, _origDragZ);
@@ -250,9 +302,11 @@ namespace crft
                 _lastMouse = e.Location;
                 return;
             }
-            var dx = e.Location.X - _lastMouse.X;
-            var dy = e.Location.Y - _lastMouse.Y;
-            if (_rotating)
+            if (_mode == Mode.Edit)
+            {
+                var dx = e.Location.X - _lastMouse.X;
+                var dy = e.Location.Y - _lastMouse.Y;
+                if (_rotating)
             {
                 _yaw += dx * 0.01f;
                 _pitch += dy * 0.01f;
@@ -269,19 +323,26 @@ namespace crft
                 _panY += dy;
                 _canvas.Invalidate();
             }
-            _lastMouse = e.Location;
+                _lastMouse = e.Location;
+            }
         }
 
         private void Canvas_MouseUp(object sender, MouseEventArgs e)
         {
-            // Stop dragging or panning/rotating
-            if (_isDragging)
+            // Handle end of lasso in select mode
+            if (_mode == Mode.Select && _isLassoing)
             {
-                _isDragging = false;
+                _isLassoing = false;
+                PerformLassoSelection();
+                _canvas.Invalidate();
             }
-            else
+            // Stop dragging or panning/rotating in edit mode
+            else if (_mode == Mode.Edit)
             {
-                _rotating = _panning = false;
+                if (_isDragging)
+                    _isDragging = false;
+                else
+                    _rotating = _panning = false;
             }
         }
 
@@ -291,6 +352,43 @@ namespace crft
             var dz = e.Delta.Height;
             _zoom *= dz > 0 ? 1.1f : 1 / 1.1f;
             _canvas.Invalidate();
+        }
+        /// <summary>
+        /// Select sample points inside the lasso polygon.
+        /// </summary>
+        private void PerformLassoSelection()
+        {
+            if (_lassoPath.Count < 3 || _samplePoints == null || _samplePoints.Count == 0)
+                return;
+            var poly = _lassoPath.ToArray();
+            _selectedSampleIndices.Clear();
+            float cx = ClientSize.Width * 0.5f + _panX;
+            float cy = ClientSize.Height * 0.5f + _panY;
+            for (int i = 0; i < _samplePoints.Count; i++)
+            {
+                var sp = _samplePoints[i];
+                var pt2d = Project(sp, cx, cy);
+                if (PointInPolygon(poly, pt2d))
+                    _selectedSampleIndices.Add(i);
+            }
+        }
+        /// <summary>
+        /// Point-in-polygon test (ray-casting).
+        /// </summary>
+        private bool PointInPolygon(PointF[] polygon, PointF test)
+        {
+            bool result = false;
+            int j = polygon.Length - 1;
+            for (int i = 0; i < polygon.Length; i++)
+            {
+                if ((polygon[i].Y < test.Y && polygon[j].Y >= test.Y || polygon[j].Y < test.Y && polygon[i].Y >= test.Y) &&
+                    (polygon[i].X + (test.Y - polygon[i].Y) / (polygon[j].Y - polygon[i].Y) * (polygon[j].X - polygon[i].X) < test.X))
+                {
+                    result = !result;
+                }
+                j = i;
+            }
+            return result;
         }
     }
 }

@@ -483,13 +483,8 @@ namespace crft
             // Show preview window
             try
             {
-#if WINDOWS
-                var formWin = new PreviewForm(segs, _homePosition, _printerBBoxDims);
-                formWin.Show();
-#else
                 var form = new PreviewEtoForm(segs, samplePts);
                 form.Show();
-#endif
             }
             catch (Exception ex)
             {

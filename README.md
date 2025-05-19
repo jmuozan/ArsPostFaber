@@ -223,7 +223,6 @@ Or use the VS Code task labeled `build`.
 
 ## Usage
 - Run `download_models.sh` to fetch required models.
-- Use `run_sam.sh` for segmentation workflows.
 - Load the compiled plugin (`crft.gha`) into Grasshopper for Rhino.
 - Explore the provided Grasshopper components for mesh digitization, hand-based mesh editing, and live control experiments.
 
