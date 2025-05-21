@@ -52,6 +52,9 @@ namespace crft
         private string _bboxMaxArg;
         // Last loaded G-code commands (for preview)
         private List<string> _lastCommandsList = new List<string>();
+        // Points from the preview editor (sampled) to override embedded path
+        private List<Point3d> _editedPreviewPoints = null;
+        private bool _hasPreviewEdits = false;
         // Printer bounding box dimensions (X, Y, Z)
         private Vector3d _printerBBoxDims = new Vector3d(220, 220, 250);
         // Show bounding box toggle
@@ -60,6 +63,8 @@ namespace crft
         private Point3d _homePosition = new Point3d(0, 0, 0);
         // Number of sample points along entire path for preview visualization
         private int _samplesPerSegment = 0;
+
+        // Removed SaveEditedPath per user request; save functionality now confined to preview window.
 
         /// <summary>
         /// Sample total number of points evenly along an entire sequence of straight-line segments.
@@ -281,6 +286,9 @@ namespace crft
                         _ackEvent = new AutoResetEvent(false);
                         _status = $"Loaded {_printCommands.Count} commands";
                     }
+                    // Clear any previous preview edits on new connection
+                    _hasPreviewEdits = false;
+                    _editedPreviewPoints = null;
                 }
                 catch (Exception ex)
                 {
@@ -304,6 +312,9 @@ namespace crft
                     _printThread = null;
                     _currentLineIndex = 0;
                     _printCommands.Clear();
+                // Clear any previous preview edits on disconnect
+                _hasPreviewEdits = false;
+                _editedPreviewPoints = null;
                 }
             }
             _lastConnect = connect;
@@ -315,6 +326,9 @@ namespace crft
                 _isPlaying = false;
                 _status = "Reset to beginning";
                 _lastEvent = _status;
+                // Clear any preview edits on reset
+                _hasPreviewEdits = false;
+                _editedPreviewPoints = null;
             }
             _lastReset = reset;
 
@@ -374,9 +388,14 @@ namespace crft
                     points.Add(currentPoint);
                 }
             }
-            // Output full path as polyline curve
+            // Output full path as polyline curve, or use edited preview if available
             Curve toolpath = null;
-            if (points.Count > 1)
+            if (_hasPreviewEdits && _editedPreviewPoints != null && _editedPreviewPoints.Count > 1)
+            {
+                var poly = new Polyline(_editedPreviewPoints);
+                toolpath = new PolylineCurve(poly);
+            }
+            else if (points.Count > 1)
             {
                 var polyline = new Polyline(points);
                 toolpath = new PolylineCurve(polyline);
@@ -389,7 +408,6 @@ namespace crft
         public override void CreateAttributes()
         {
             // Toolbar with Play/Pause and Edit buttons
-            // Toolbar with Play/Pause and Edit buttons (Edit disabled)
             m_attributes = new ComponentToolbar(
                 this,
                 // Play/Pause label and action
@@ -537,7 +555,10 @@ namespace crft
                 {
                     if (form.EditedSamples != null)
                     {
-                        // Update cached commands with moved points
+                        // Capture edited preview points to override embedded path
+                        _editedPreviewPoints = form.EditedSamples.Select(t => t.Item2).ToList();
+                        _hasPreviewEdits = true;
+                        // Update cached G-code commands at sample indices
                         foreach (var tup in form.EditedSamples)
                         {
                             int cmdIdx = tup.Item1;
@@ -904,13 +925,20 @@ end tell
             // Add port dropdown list and connect to first input
             _portParam = new PortParam();
             document.AddObject(_portParam, false);
-            // Position to the left of this component
+            // Position to the left of this component and shorten dropdown width
             var myAttr = this.Attributes;
             if (myAttr != null)
             {
                 var b = myAttr.Bounds;
+                // shorten dropdown to fixed width
+                const float portWidth = 80f;
+                var pAttr = _portParam.Attributes;
+                var pBounds = pAttr.Bounds;
+                pBounds.Width = portWidth;
+                pAttr.Bounds = pBounds;
+                // reposition dropdown
                 _portParam.Attributes.Pivot = new System.Drawing.PointF(
-                    b.Left - _portParam.Attributes.Bounds.Width - 20,
+                    b.Left - portWidth - 20,
                     b.Top);
             }
             // Connect port dropdown output to Port input (index 0)
@@ -936,6 +964,14 @@ end tell
         /// </summary>
         public override void DrawViewportWires(IGH_PreviewArgs args)
         {
+            // If preview edits exist, draw edited path and exit
+            if (_hasPreviewEdits && _editedPreviewPoints != null && _editedPreviewPoints.Count > 1)
+            {
+                var editedPoly = new Polyline(_editedPreviewPoints);
+                var editedCurve = new PolylineCurve(editedPoly);
+                args.Display.DrawCurve(editedCurve, Color.LimeGreen, 2);
+                return;
+            }
             // Note: skipping base.DrawViewportWires to prevent default Path preview
             // Snapshot lists to avoid enumeration errors
             var execTrans = _execTransSegs.ToArray();

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Eto.Forms;
 using Eto.Drawing;
+using System.Linq;
 using Rhino.Geometry;
 
 namespace crft
@@ -23,6 +24,16 @@ namespace crft
         }
         private readonly List<Point3d> _points;
         private readonly List<Point3d> _samplePoints;
+        // Edited upcoming path points with command indices
+        private readonly List<Tuple<int, Point3d>> _editSamples;
+        // Bounding box region for constraint
+        private Point3d _bboxMin;
+        private Point3d _bboxMax;
+        // Group drag state for selected sample points
+        private bool _isGroupDragging = false;
+        private Point3d _dragAnchorWorld;
+        private double _dragRefZ;
+        private List<Point3d> _initialSelectedPoints;
         private float _yaw = MathF.PI / 4f;
         private float _pitch = MathF.PI / 6f;
         private float _zoom;
@@ -58,6 +69,8 @@ namespace crft
                 }
             }
             _points = new List<Point3d>();
+            // Initialize editable samples
+            _editSamples = new List<Tuple<int, Point3d>>();
             // Collect all segment endpoints for bounding box
             foreach (var seg in _segments)
             {
@@ -66,6 +79,10 @@ namespace crft
             }
             _samplePoints = new List<Point3d>();
             ComputeBounds();
+            // Capture bounding box region from segments (includes printed bbox)
+            var bbAll = new BoundingBox(_points);
+            _bboxMin = bbAll.Min;
+            _bboxMax = bbAll.Max;
             _canvas = new Drawable { BackgroundColor = Colors.White };
             _canvas.Paint += (s, e) => Draw(e.Graphics);
             _canvas.MouseDown += Canvas_MouseDown;
@@ -89,33 +106,50 @@ namespace crft
                 _mode = modeSelector.SelectedIndex == 0 ? Mode.Edit : Mode.Select;
                 _isLassoing = false;
                 _lassoPath.Clear();
-                _selectedSampleIndices.Clear();
+                if (_mode == Mode.Select)
+                    _selectedSampleIndices.Clear();
                 _canvas.Invalidate();
+            };
+            // Save edits and close preview, triggering component update
+            var saveButton = new Button { Text = "Save" };
+            saveButton.Click += (s, e) =>
+            {
+                // Commit edited sample points back to editSamples before closing
+                int count = Math.Min(_editSamples.Count, _samplePoints.Count);
+                for (int i = 0; i < count; i++)
+                {
+                    var cmdIdx = _editSamples[i].Item1;
+                    var pt = _samplePoints[i];
+                    _editSamples[i] = Tuple.Create(cmdIdx, pt);
+                }
+                Close();
             };
             // Layout: toolbar and canvas in a vertical DynamicLayout
             var layout = new DynamicLayout { DefaultSpacing = new Size(5, 5), Padding = new Padding(5) };
             layout.BeginVertical();
-            // Toolbar row
+            // Toolbar row: Reset, Mode, Save
             layout.Add(new TableLayout
             {
-                Rows = { new TableRow(resetButton, modeSelector) }
+                Rows = { new TableRow(resetButton, modeSelector, saveButton) }
             });
             layout.Add(_canvas, yscale: true);
             layout.EndVertical();
             Content = layout;
         }
         /// <summary>
-        /// Constructor with sample points for preview.
+        /// Constructor with editable sample points for preview (with command indices).
         /// </summary>
-        public PreviewEtoForm(List<Tuple<Point3d, Point3d, System.Drawing.Color>> segments, List<Point3d> samplePoints)
+        public PreviewEtoForm(List<Tuple<Point3d, Point3d, System.Drawing.Color>> segments, List<Tuple<int, Point3d>> editSamples)
             : this(segments)
         {
-            _samplePoints = samplePoints ?? new List<Point3d>();
-            if (_samplePoints.Count > 0)
+            _editSamples = editSamples ?? new List<Tuple<int, Point3d>>();
+            _samplePoints.Clear();
+            foreach (var tup in _editSamples)
             {
-                _points.AddRange(_samplePoints);
-                ComputeBounds();
+                _samplePoints.Add(tup.Item2);
+                _points.Add(tup.Item2);
             }
+            ComputeBounds();
         }
 
         private void ComputeBounds()
@@ -142,13 +176,23 @@ namespace crft
             var ch = ClientSize.Height;
             var cx = cw / 2f + _panX;
             var cy = ch / 2f + _panY;
-            // Draw segments
+            // Draw segments (skip upcoming translation segments when in edit preview)
             foreach (var seg in _segments)
             {
+                // Skip original blue (unexecuted translation) segments if edited path exists
+                if (_samplePoints.Count > 1 && seg.Color == System.Drawing.Color.Blue)
+                    continue;
                 var a = Project(seg.A, cx, cy);
                 var b = Project(seg.B, cx, cy);
                 using var pen = new Pen(ConvertColor(seg.Color), 2);
                 g.DrawLine(pen, a, b);
+            }
+            // Draw edited upcoming path via sample points
+            if (_samplePoints.Count > 1)
+            {
+                using var penPath = new Pen(new Color(0f, 0f, 1f), 2);
+                var pts2d = _samplePoints.Select(p => Project(p, cx, cy)).ToArray();
+                g.DrawLines(penPath, pts2d);
             }
             // Draw sample points, highlighting selections
             if (_samplePoints != null)
@@ -219,9 +263,41 @@ namespace crft
             // Mode-dependent mouse down
             if (_mode == Mode.Edit)
             {
+                // Group-drag selected sample points
+                if (e.Buttons == MouseButtons.Primary && _selectedSampleIndices.Count > 0)
+                {
+                    // Check if clicked near any selected sample point
+                    const float hitRadius = 6f;
+                    float bestDistSq = hitRadius * hitRadius;
+                    int hitIndex = -1;
+                    float cx = ClientSize.Width * 0.5f + _panX;
+                    float cy = ClientSize.Height * 0.5f + _panY;
+                    foreach (var idx in _selectedSampleIndices)
+                    {
+                        var sp = _samplePoints[idx];
+                        var proj = Project(sp, cx, cy);
+                        float dx = proj.X - e.Location.X;
+                        float dy = proj.Y - e.Location.Y;
+                        float dsq = dx * dx + dy * dy;
+                        if (dsq < bestDistSq)
+                        {
+                            bestDistSq = dsq;
+                            hitIndex = idx;
+                        }
+                    }
+                    if (hitIndex >= 0)
+                    {
+                        // Begin group drag
+                        _initialSelectedPoints = _selectedSampleIndices.Select(i => _samplePoints[i]).ToList();
+                        _dragRefZ = _initialSelectedPoints.Average(p => p.Z);
+                        _dragAnchorWorld = Unproject(e.Location, _dragRefZ);
+                        _isGroupDragging = true;
+                        return;
+                    }
+                }
+                // Begin endpoint drag
                 if (e.Buttons == MouseButtons.Alternate)
                 {
-                    // Begin endpoint drag
                     BeginDrag(e.Location);
                 }
                 else if (e.Buttons == MouseButtons.Primary)
@@ -280,6 +356,27 @@ namespace crft
 
         private void Canvas_MouseMove(object sender, MouseEventArgs e)
         {
+            // Handle group drag in edit mode
+            if (_mode == Mode.Edit && _isGroupDragging)
+            {
+                // Project new anchor on reference plane and compute delta
+                var newAnchor = Unproject(e.Location, _dragRefZ);
+                var delta = newAnchor - _dragAnchorWorld;
+                // Move each selected sample point with clamping
+                for (int k = 0; k < _selectedSampleIndices.Count; k++)
+                {
+                    int idx = _selectedSampleIndices[k];
+                    var orig = _initialSelectedPoints[k];
+                    var moved = orig + delta;
+                    moved.X = Math.Max(_bboxMin.X, Math.Min(_bboxMax.X, moved.X));
+                    moved.Y = Math.Max(_bboxMin.Y, Math.Min(_bboxMax.Y, moved.Y));
+                    moved.Z = Math.Max(_bboxMin.Z, Math.Min(_bboxMax.Z, moved.Z));
+                    _samplePoints[idx] = moved;
+                }
+                _canvas.Invalidate();
+                _lastMouse = e.Location;
+                return;
+            }
             // Handle lasso drawing in select mode
             if (_mode == Mode.Select && _isLassoing)
             {
@@ -329,6 +426,12 @@ namespace crft
 
         private void Canvas_MouseUp(object sender, MouseEventArgs e)
         {
+            // End group drag in edit mode
+            if (_mode == Mode.Edit && _isGroupDragging)
+            {
+                _isGroupDragging = false;
+                return;
+            }
             // Handle end of lasso in select mode
             if (_mode == Mode.Select && _isLassoing)
             {
@@ -390,5 +493,9 @@ namespace crft
             }
             return result;
         }
+        /// <summary>
+        /// Edited sample points with their original command indices.
+        /// </summary>
+        public List<Tuple<int, Point3d>> EditedSamples => _editSamples;
     }
 }

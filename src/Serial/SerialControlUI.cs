@@ -137,12 +137,10 @@ namespace crft
             {
                 var font = GH_FontServer.NewFont(GH_FontServer.StandardAdjusted, 6f / GH_GraphicsUtil.UiScale);
                 const int radius = 3;
-                // Play/Pause button
                 using (var cap = GH_Capsule.CreateTextCapsule(_playBounds, _playBounds, GH_Palette.Black, _playLabel(), font, radius, _playDown ? 0 : 8))
                 {
                     cap.Render(graphics, false, _owner.Locked, false);
                 }
-                // Edit button
                 using (var cap = GH_Capsule.CreateTextCapsule(_editBounds, _editBounds, GH_Palette.Black, _editLabel(), font, radius, _editDown ? 0 : 8))
                 {
                     cap.Render(graphics, false, _owner.Locked, false);
