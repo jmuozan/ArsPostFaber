@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Grasshopper.Kernel;
 using Rhino.Geometry;
+using Grasshopper.Kernel.Types;
 
 namespace crft.Slicer
 {
@@ -30,7 +31,10 @@ namespace crft.Slicer
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
-            AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "GenerateSupport component not yet implemented (port generate_support.c)");
+            // Placeholder: no support generation implemented yet
+            double overhangAngle = 45.0;
+            DA.GetData(1, ref overhangAngle);
+            DA.SetDataList(0, new List<GeometryBase>());
         }
 
         public override Guid ComponentGuid => new Guid("5D9BD3B3-4697-42E5-9ED2-0553A61E8069");

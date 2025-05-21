@@ -113,29 +113,40 @@ namespace crft
         {
             var lineList = lines.ToList();
             var idxList = cmdIndices.ToList();
-            var curves = lineList.Select(l => new LineCurve(l)).Cast<Curve>().ToList();
-            var lengths = curves.Select(c => c.GetLength()).ToList();
-            double totalLength = lengths.Sum();
             var result = new List<Tuple<int, Point3d>>();
-            for (int i = 1; i <= totalSamples; i++)
+            if (lineList.Count == 0 || idxList.Count == 0)
+                return result;
+            // Include start endpoint of the first unexecuted segment
+            result.Add(Tuple.Create(idxList[0], lineList[0].From));
+            if (totalSamples > 0)
             {
-                double target = totalLength * i / (totalSamples + 1);
-                double acc = 0;
-                for (int j = 0; j < curves.Count; j++)
+                var curves = lineList.Select(l => new LineCurve(l)).Cast<Curve>().ToList();
+                var lengths = curves.Select(c => c.GetLength()).ToList();
+                double totalLength = lengths.Sum();
+                for (int i = 1; i <= totalSamples; i++)
                 {
-                    var len = lengths[j];
-                    if (acc + len >= target)
+                    double target = totalLength * i / (totalSamples + 1);
+                    double acc = 0;
+                    for (int j = 0; j < curves.Count; j++)
                     {
-                        double rem = target - acc;
-                        double tNorm = len > 0 ? rem / len : 0;
-                        var pt = curves[j].PointAtNormalizedLength(tNorm);
-                        int cmdIdx = j < idxList.Count ? idxList[j] : -1;
-                        result.Add(Tuple.Create(cmdIdx, pt));
-                        break;
+                        var len = lengths[j];
+                        if (acc + len >= target)
+                        {
+                            double rem = target - acc;
+                            double tNorm = len > 0 ? rem / len : 0;
+                            var pt = curves[j].PointAtNormalizedLength(tNorm);
+                            int cmdIdx = j < idxList.Count ? idxList[j] : -1;
+                            result.Add(Tuple.Create(cmdIdx, pt));
+                            break;
+                        }
+                        acc += len;
                     }
-                    acc += len;
                 }
             }
+            // Include end endpoint of the last unexecuted segment
+            var lastLine = lineList[lineList.Count - 1];
+            var lastIdx = idxList[idxList.Count - 1];
+            result.Add(Tuple.Create(lastIdx, lastLine.To));
             return result;
         }
 
@@ -329,6 +340,10 @@ namespace crft
                 // Clear any preview edits on reset
                 _hasPreviewEdits = false;
                 _editedPreviewPoints = null;
+                // Clear cached commands to reload from input on next solution
+                _lastCommandsList = null;
+                // Force recompute to reflect original input commands
+                ExpireSolution(true);
             }
             _lastReset = reset;
 
@@ -388,14 +403,9 @@ namespace crft
                     points.Add(currentPoint);
                 }
             }
-            // Output full path as polyline curve, or use edited preview if available
+            // Output full path as polyline curve
             Curve toolpath = null;
-            if (_hasPreviewEdits && _editedPreviewPoints != null && _editedPreviewPoints.Count > 1)
-            {
-                var poly = new Polyline(_editedPreviewPoints);
-                toolpath = new PolylineCurve(poly);
-            }
-            else if (points.Count > 1)
+            if (points.Count > 1)
             {
                 var polyline = new Polyline(points);
                 toolpath = new PolylineCurve(polyline);

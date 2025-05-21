@@ -176,12 +176,9 @@ namespace crft
             var ch = ClientSize.Height;
             var cx = cw / 2f + _panX;
             var cy = ch / 2f + _panY;
-            // Draw segments (skip upcoming translation segments when in edit preview)
+            // Draw all segments of the path
             foreach (var seg in _segments)
             {
-                // Skip original blue (unexecuted translation) segments if edited path exists
-                if (_samplePoints.Count > 1 && seg.Color == System.Drawing.Color.Blue)
-                    continue;
                 var a = Project(seg.A, cx, cy);
                 var b = Project(seg.B, cx, cy);
                 using var pen = new Pen(ConvertColor(seg.Color), 2);

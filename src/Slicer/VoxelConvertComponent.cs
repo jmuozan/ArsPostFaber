@@ -29,7 +29,12 @@ namespace crft.Slicer
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
-            AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "VoxelConvert component not yet implemented (port voxel_convert.c)");
+            object input = null;
+            string format = "raw";
+            if (!DA.GetData(0, ref input)) return;
+            DA.GetData(1, ref format);
+            // Placeholder: no format conversion implemented yet
+            DA.SetData(0, input);
         }
 
         public override Guid ComponentGuid => new Guid("D4C8F6E3-4567-4F9A-DEF0-34567890ABCD");

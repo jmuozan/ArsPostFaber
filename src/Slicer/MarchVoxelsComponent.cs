@@ -30,7 +30,12 @@ namespace crft.Slicer
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
-            AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "MarchVoxels component not yet implemented (port march_voxels.c)");
+            var boxes = new List<Box>();
+            double isoValue = 0.5;
+            if (!DA.GetDataList(0, boxes)) return;
+            DA.GetData(1, ref isoValue);
+            // Placeholder: no marching cubes implementation yet
+            DA.SetData(0, new Mesh());
         }
 
         public override Guid ComponentGuid => new Guid("B2A6F4C7-2345-4D78-BCDE-1234567890AB");

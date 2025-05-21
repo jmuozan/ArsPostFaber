@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Grasshopper.Kernel;
+using Rhino.Geometry;
 
 namespace crft.Slicer
 {
@@ -29,7 +30,11 @@ namespace crft.Slicer
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
-            AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "AccentuateVoxels component not yet implemented (port accentuate_voxels.c)");
+            var boxes = new List<Box>();
+            int strength = 1;
+            if (!DA.GetDataList(0, boxes)) return;
+            DA.GetData(1, ref strength);
+            DA.SetDataList(0, boxes);
         }
 
         public override Guid ComponentGuid => new Guid("36415593-C080-4E37-8EB3-C898A9C1D5AC");

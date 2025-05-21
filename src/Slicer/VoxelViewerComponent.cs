@@ -11,6 +11,7 @@ namespace crft.Slicer
     /// </summary>
     public class VoxelViewerComponent : GH_Component
     {
+        private List<Box> _boxes = new List<Box>();
         public VoxelViewerComponent()
           : base("Voxel Viewer", "VoxView",
               "Visualize voxel grid", "crft", "Slicer")
@@ -29,9 +30,24 @@ namespace crft.Slicer
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
-            AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "VoxelViewer component not yet implemented (port voxel_viewer.c)");
+            _boxes.Clear();
+            var boxes = new List<Box>();
+            if (!DA.GetDataList(0, boxes)) return;
+            _boxes.AddRange(boxes);
+            ExpirePreview(true);
         }
 
         public override Guid ComponentGuid => new Guid("C3B7E5D2-3456-4E89-CDEF-234567890ABC");
+
+        public override void DrawViewportWires(IGH_PreviewArgs args)
+        {
+            base.DrawViewportWires(args);
+            if (_boxes == null || _boxes.Count == 0) return;
+            var display = args.Display;
+            foreach (var box in _boxes)
+            {
+                display.DrawBox(box, System.Drawing.Color.LimeGreen);
+            }
+        }
     }
 }
