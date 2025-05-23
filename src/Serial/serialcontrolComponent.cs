@@ -418,8 +418,9 @@ namespace crft
                 toolpath = new PolylineCurve(polyline);
             }
             DA.SetData("Path", toolpath);
-            // Output the edited G-code commands list
-            DA.SetDataList("GCode", commandsList);
+            // Output the G-code commands list (updated for any preview edits)
+            var outputGCode = (_printCommands != null && _printCommands.Count > 0) ? _printCommands : commandsList;
+            DA.SetDataList("GCode", outputGCode);
         }
         /// <summary>
         /// Add custom UI button under the component for playback control
@@ -573,12 +574,26 @@ namespace crft
                     var edited = form.EditedSamples;
                     if (edited != null && edited.Count > 0)
                     {
-                        // Order samples by original command index
-                        _editedPreviewPoints = edited
-                            .OrderBy(t => t.Item1)
-                            .Select(t => t.Item2)
-                            .ToList();
+                        // Order samples by original command index and extract points
+                        var pts = edited.OrderBy(t => t.Item1).Select(t => t.Item2).ToList();
+                        _editedPreviewPoints = pts;
                         _hasPreviewEdits = true;
+                        // Rebuild print command list: keep executed commands, then new moves
+                        var executed = new List<string>();
+                        if (_printCommands != null && _printCommands.Count > 0)
+                            executed = _printCommands.Take(_currentLineIndex).ToList();
+                        else if (_lastCommandsList != null && _lastCommandsList.Count > 0)
+                            executed = _lastCommandsList.Take(_currentLineIndex).ToList();
+                        var rebuilt = new List<string>(executed);
+                        foreach (var pt in pts)
+                        {
+                            var xs = pt.X.ToString(CultureInfo.InvariantCulture);
+                            var ys = pt.Y.ToString(CultureInfo.InvariantCulture);
+                            var zs = pt.Z.ToString(CultureInfo.InvariantCulture);
+                            rebuilt.Add($"G1 X{xs} Y{ys} Z{zs}");
+                        }
+                        _printCommands = rebuilt;
+                        _lastCommandsList = new List<string>(_printCommands);
                         ExpireSolution(true);
                     }
                 };
