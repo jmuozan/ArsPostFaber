@@ -1,0 +1,230 @@
+#include <opencv2/opencv.hpp>
+#include <mediapipe/framework/calculator_graph.h>
+#include <mediapipe/framework/formats/image_frame.h>
+#include <mediapipe/framework/formats/image_frame_opencv.h>
+#include <mediapipe/framework/formats/landmark.pb.h>
+#include <mediapipe/framework/port/opencv_imgproc_inc.h>
+#include <mediapipe/framework/port/opencv_video_inc.h>
+#include <mediapipe/framework/port/parse_text_proto.h>
+#include <mediapipe/framework/port/status.h>
+
+using namespace cv;
+using namespace std;
+
+// MediaPipe graph configuration for hand tracking
+constexpr char kInputStream[] = "input_video";
+constexpr char kOutputStream[] = "output_video";
+constexpr char kLandmarksStream[] = "hand_landmarks";
+constexpr char kWindowName[] = "Hand Landmark Detection";
+
+// Hand landmark connections for drawing
+const vector<pair<int, int>> HAND_CONNECTIONS = {
+    // Thumb
+    {0, 1}, {1, 2}, {2, 3}, {3, 4},
+    // Index finger
+    {0, 5}, {5, 6}, {6, 7}, {7, 8},
+    // Middle finger
+    {0, 9}, {9, 10}, {10, 11}, {11, 12},
+    // Ring finger
+    {0, 13}, {13, 14}, {14, 15}, {15, 16},
+    // Pinky
+    {0, 17}, {17, 18}, {18, 19}, {19, 20},
+    // Palm
+    {5, 9}, {9, 13}, {13, 17}
+};
+
+// Function to draw hand landmarks
+void drawLandmarks(Mat& image, const mediapipe::NormalizedLandmarkList& landmarks) {
+    int height = image.rows;
+    int width = image.cols;
+    
+    // Draw landmark points
+    for (int i = 0; i < landmarks.landmark_size(); ++i) {
+        const auto& landmark = landmarks.landmark(i);
+        int x = static_cast<int>(landmark.x() * width);
+        int y = static_cast<int>(landmark.y() * height);
+        
+        // Different colors for different finger parts
+        Scalar color;
+        if (i == 0) color = Scalar(255, 0, 0);      // Wrist - Red
+        else if (i <= 4) color = Scalar(255, 255, 0);   // Thumb - Cyan
+        else if (i <= 8) color = Scalar(0, 255, 0);     // Index - Green
+        else if (i <= 12) color = Scalar(0, 255, 255);  // Middle - Yellow
+        else if (i <= 16) color = Scalar(255, 0, 255);  // Ring - Magenta
+        else color = Scalar(0, 0, 255);                  // Pinky - Red
+        
+        circle(image, Point(x, y), 5, color, -1);
+        
+        // Add landmark number
+        putText(image, to_string(i), Point(x + 10, y - 10), 
+                FONT_HERSHEY_SIMPLEX, 0.3, Scalar(255, 255, 255), 1);
+    }
+    
+    // Draw connections between landmarks
+    for (const auto& connection : HAND_CONNECTIONS) {
+        if (connection.first < landmarks.landmark_size() && 
+            connection.second < landmarks.landmark_size()) {
+            
+            const auto& start = landmarks.landmark(connection.first);
+            const auto& end = landmarks.landmark(connection.second);
+            
+            Point pt1(static_cast<int>(start.x() * width), 
+                     static_cast<int>(start.y() * height));
+            Point pt2(static_cast<int>(end.x() * width), 
+                     static_cast<int>(end.y() * height));
+            
+            line(image, pt1, pt2, Scalar(255, 255, 255), 2);
+        }
+    }
+}
+
+int main() {
+    // MediaPipe graph configuration
+    string graph_config = R"(
+        input_stream: "input_video"
+        output_stream: "output_video"
+        output_stream: "hand_landmarks"
+        
+        node {
+            calculator: "FlowLimiterCalculator"
+            input_stream: "input_video"
+            input_stream: "FINISHED:output_video"
+            input_stream_info: {
+                tag_index: "FINISHED"
+                back_edge: true
+            }
+            output_stream: "throttled_input_video"
+        }
+        
+        node {
+            calculator: "HandLandmarkTrackingGpu"
+            input_stream: "IMAGE:throttled_input_video"
+            output_stream: "LANDMARKS:hand_landmarks"
+            output_stream: "IMAGE:output_video"
+        }
+    )";
+    
+    // Initialize MediaPipe
+    mediapipe::CalculatorGraphConfig config;
+    if (!mediapipe::ParseTextProto<mediapipe::CalculatorGraphConfig>(graph_config, &config)) {
+        cerr << "Failed to parse graph config" << endl;
+        return -1;
+    }
+    
+    mediapipe::CalculatorGraph graph;
+    auto status = graph.Initialize(config);
+    if (!status.ok()) {
+        cerr << "Failed to initialize graph: " << status.message() << endl;
+        return -1;
+    }
+    
+    // Start the graph
+    status = graph.StartRun({});
+    if (!status.ok()) {
+        cerr << "Failed to start graph: " << status.message() << endl;
+        return -1;
+    }
+    
+    // Initialize webcam
+    VideoCapture cap(0);
+    if (!cap.isOpened()) {
+        cerr << "Error: Cannot open webcam" << endl;
+        return -1;
+    }
+    
+    // Set webcam properties for better performance
+    cap.set(CAP_PROP_FRAME_WIDTH, 640);
+    cap.set(CAP_PROP_FRAME_HEIGHT, 480);
+    cap.set(CAP_PROP_FPS, 30);
+    
+    cout << "Hand Landmark Detection Started!" << endl;
+    cout << "Controls:" << endl;
+    cout << "- Press 'q' to quit" << endl;
+    cout << "- Press 's' to save current frame" << endl;
+    
+    Mat frame;
+    int frame_count = 0;
+    
+    while (true) {
+        cap >> frame;
+        if (frame.empty()) {
+            cerr << "Error: Empty frame" << endl;
+            break;
+        }
+        
+        // Flip frame horizontally for mirror effect
+        flip(frame, frame, 1);
+        
+        // Convert BGR to RGB for MediaPipe
+        Mat rgb_frame;
+        cvtColor(frame, rgb_frame, COLOR_BGR2RGB);
+        
+        // Create MediaPipe ImageFrame
+        auto image_frame = absl::make_unique<mediapipe::ImageFrame>(
+            mediapipe::ImageFormatForOpenCvMatDepth(rgb_frame.depth()),
+            rgb_frame.cols, rgb_frame.rows, rgb_frame.step[0],
+            rgb_frame.data);
+        
+        // Send frame to MediaPipe
+        auto timestamp = mediapipe::Timestamp::FromSecondAndMicrosecond(
+            frame_count / 30.0, (frame_count % 30) * 33333);
+        
+        status = graph.AddPacketToInputStream(
+            kInputStream, 
+            mediapipe::Adopt(image_frame.release()).At(timestamp));
+        
+        if (!status.ok()) {
+            cerr << "Failed to add packet: " << status.message() << endl;
+            break;
+        }
+        
+        // Get results
+        mediapipe::Packet landmarks_packet;
+        if (graph.GetOutputStream(kLandmarksStream)->GetPacket(&landmarks_packet)) {
+            if (!landmarks_packet.IsEmpty()) {
+                const auto& landmarks = landmarks_packet.Get<mediapipe::NormalizedLandmarkList>();
+                drawLandmarks(frame, landmarks);
+                
+                // Display landmark count
+                putText(frame, "Landmarks detected: " + to_string(landmarks.landmark_size()),
+                       Point(10, 30), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(0, 255, 0), 2);
+            }
+        }
+        
+        // Display FPS
+        putText(frame, "FPS: " + to_string(static_cast<int>(cap.get(CAP_PROP_FPS))),
+               Point(10, 60), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(255, 0, 0), 2);
+        
+        // Show frame
+        imshow(kWindowName, frame);
+        
+        // Handle key presses
+        char key = waitKey(1) & 0xFF;
+        if (key == 'q' || key == 27) { // 'q' or ESC to quit
+            break;
+        } else if (key == 's') { // 's' to save
+            string filename = "hand_landmarks_" + to_string(frame_count) + ".jpg";
+            imwrite(filename, frame);
+            cout << "Saved: " << filename << endl;
+        }
+        
+        frame_count++;
+    }
+    
+    // Cleanup
+    status = graph.CloseInputStream(kInputStream);
+    if (!status.ok()) {
+        cerr << "Failed to close input stream: " << status.message() << endl;
+    }
+    
+    status = graph.WaitUntilDone();
+    if (!status.ok()) {
+        cerr << "Failed to finish graph: " << status.message() << endl;
+    }
+    
+    cap.release();
+    destroyAllWindows();
+    
+    cout << "Hand landmark detection finished!" << endl;
+    return 0;
+}
