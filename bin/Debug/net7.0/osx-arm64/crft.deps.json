@@ -9,6 +9,8 @@
     ".NETCoreApp,Version=v7.0/osx-arm64": {
       "crft/1.0": {
         "dependencies": {
+          "Eto.Forms": "2.5.1",
+          "Eto.Platform.Mac64": "2.5.1",
           "Grasshopper": "8.0.23304.9001",
           "Mediapipe": "1.0.0.1",
           "Microsoft.CSharp": "4.7.0",
@@ -29,6 +31,32 @@
         },
         "runtime": {
           "crft.gha": {}
+        }
+      },
+      "Eto.Forms/2.5.1": {
+        "dependencies": {
+          "System.ComponentModel.Annotations": "4.7.0"
+        },
+        "runtime": {
+          "lib/netstandard2.0/Eto.dll": {
+            "assemblyVersion": "2.5.0.0",
+            "fileVersion": "2.5.7451.6518"
+          }
+        }
+      },
+      "Eto.Platform.Mac64/2.5.1": {
+        "dependencies": {
+          "Eto.Forms": "2.5.1"
+        },
+        "runtime": {
+          "lib/netstandard2.0/Eto.Mac64.dll": {
+            "assemblyVersion": "2.5.0.0",
+            "fileVersion": "2.5.7451.6523"
+          },
+          "lib/netstandard2.0/MonoMac.dll": {
+            "assemblyVersion": "0.0.1.0",
+            "fileVersion": "0.0.1.0"
+          }
         }
       },
       "Grasshopper/8.0.23304.9001": {
@@ -773,6 +801,7 @@
           "System.Threading": "4.3.0"
         }
       },
+      "System.ComponentModel.Annotations/4.7.0": {},
       "System.Console/4.3.0": {
         "dependencies": {
           "Microsoft.NETCore.Platforms": "1.1.1",
@@ -1537,6 +1566,20 @@
       "serviceable": false,
       "sha512": ""
     },
+    "Eto.Forms/2.5.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-tvpoMcl67h+L0YQaAYh4G/1mzco0FxGYeT8z/vipFhpO4ohIglf2XTzkVsfV1JN1L80QVbqOZelTZkmn/Nu8Vg==",
+      "path": "eto.forms/2.5.1",
+      "hashPath": "eto.forms.2.5.1.nupkg.sha512"
+    },
+    "Eto.Platform.Mac64/2.5.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-io761vZmV1DrXge+PPKS31MlvfRJvX6VtI+cx3d4XMhHBUhPxfaPBy+VvxvaWVGk8/uWViz9zonyH6wocllA6w==",
+      "path": "eto.platform.mac64/2.5.1",
+      "hashPath": "eto.platform.mac64.2.5.1.nupkg.sha512"
+    },
     "Grasshopper/8.0.23304.9001": {
       "type": "package",
       "serviceable": true,
@@ -2159,6 +2202,13 @@
       "sha512": "sha512-Epx8PoVZR0iuOnJJDzp7pWvdfMMOAvpUo95pC4ScH2mJuXkKA2Y4aR3cG9qt2klHgSons1WFh4kcGW7cSXvrxg==",
       "path": "system.collections.specialized/4.3.0",
       "hashPath": "system.collections.specialized.4.3.0.nupkg.sha512"
+    },
+    "System.ComponentModel.Annotations/4.7.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-0YFqjhp/mYkDGpU0Ye1GjE53HMp9UVfGN7seGpAMttAC0C40v5gw598jCgpbBLMmCo0E5YRLBv5Z2doypO49ZQ==",
+      "path": "system.componentmodel.annotations/4.7.0",
+      "hashPath": "system.componentmodel.annotations.4.7.0.nupkg.sha512"
     },
     "System.Console/4.3.0": {
       "type": "package",

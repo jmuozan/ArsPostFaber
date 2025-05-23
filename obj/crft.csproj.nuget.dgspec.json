@@ -49,6 +49,14 @@
         "net7.0": {
           "targetAlias": "net7.0",
           "dependencies": {
+            "Eto.Forms": {
+              "target": "Package",
+              "version": "[2.5.1, )"
+            },
+            "Eto.Platform.Mac64": {
+              "target": "Package",
+              "version": "[2.5.1, )"
+            },
             "Grasshopper": {
               "include": "Compile, Build, Native, ContentFiles, Analyzers, BuildTransitive",
               "target": "Package",

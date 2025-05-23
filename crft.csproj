@@ -33,6 +33,10 @@
     <None Remove="mp\**" />
     <!-- Exclude GeneratedComponents from build as they are generated at runtime -->
     <Compile Remove="GeneratedComponents\**\*.cs" />
+    <!-- Exclude PythonNETGrasshopperTemplate folder from build -->
+    <Compile Remove="PythonNETGrasshopperTemplate\**" />
+    <EmbeddedResource Remove="PythonNETGrasshopperTemplate\**" />
+    <None Remove="PythonNETGrasshopperTemplate\**" />
   </ItemGroup>
   
   <PropertyGroup>
@@ -133,6 +137,12 @@
     <None Include="context_for_llm\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+  <!-- Cross-platform preview UI dependencies -->
+  <ItemGroup>
+    <!-- Eto.Forms and Mac platform implementation for cross-platform preview -->
+    <PackageReference Include="Eto.Forms" Version="2.5.1" />
+    <PackageReference Include="Eto.Platform.Mac64" Version="2.5.1" />
   </ItemGroup>
 
 </Project>

@@ -81,13 +81,19 @@
 /Users/jorgemuyo/Desktop/crft/bin/Debug/libonnxruntime.dylib
 /Users/jorgemuyo/Desktop/crft/bin/Debug/libOpenCvSharpExtern.dylib
 /Users/jorgemuyo/Desktop/crft/bin/Debug/libSystem.IO.Ports.Native.dylib
+/Users/jorgemuyo/Desktop/crft/bin/Debug/context_for_llm/C#ScriptingForGrasshopper.pdf
+/Users/jorgemuyo/Desktop/crft/bin/Debug/Eto.Mac64.dll
+/Users/jorgemuyo/Desktop/crft/bin/Debug/MonoMac.dll
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/onnxruntime.dll
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/onnxruntime_providers_shared.dll
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/lib/native/libOpenCvSharpExtern.dylib
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/context_for_llm/C#ScriptingForGrasshopper.pdf
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/crft.deps.json
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/crft.runtimeconfig.json
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/crft.gha
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/crft.pdb
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/Eto.Mac64.dll
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/MonoMac.dll
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/itext.barcodes.dll
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/itext.forms.dll
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/itext.io.dll
@@ -154,6 +160,5 @@
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/libonnxruntime.dylib
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/libOpenCvSharpExtern.dylib
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/libSystem.IO.Ports.Native.dylib
-/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/context_for_llm/C#ScriptingForGrasshopper.pdf
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.sourcelink.json
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.csproj.Up2Date

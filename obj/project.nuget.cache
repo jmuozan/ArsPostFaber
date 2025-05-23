@@ -1,9 +1,11 @@
 {
   "version": 2,
-  "dgSpecHash": "lw9u2BmUfP4=",
+  "dgSpecHash": "ohxfSRdMy70=",
   "success": true,
   "projectFilePath": "/Users/jorgemuyo/Desktop/crft/crft.csproj",
   "expectedPackageFiles": [
+    "/Users/jorgemuyo/.nuget/packages/eto.forms/2.5.1/eto.forms.2.5.1.nupkg.sha512",
+    "/Users/jorgemuyo/.nuget/packages/eto.platform.mac64/2.5.1/eto.platform.mac64.2.5.1.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/grasshopper/8.0.23304.9001/grasshopper.8.0.23304.9001.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/itext7/7.2.5/itext7.7.2.5.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/itext7.commons/7.2.5/itext7.commons.7.2.5.nupkg.sha512",
@@ -93,6 +95,7 @@
     "/Users/jorgemuyo/.nuget/packages/system.collections.immutable/7.0.0/system.collections.immutable.7.0.0.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.collections.nongeneric/4.3.0/system.collections.nongeneric.4.3.0.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.collections.specialized/4.3.0/system.collections.specialized.4.3.0.nupkg.sha512",
+    "/Users/jorgemuyo/.nuget/packages/system.componentmodel.annotations/4.7.0/system.componentmodel.annotations.4.7.0.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.console/4.3.0/system.console.4.3.0.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.diagnostics.debug/4.3.0/system.diagnostics.debug.4.3.0.nupkg.sha512",
     "/Users/jorgemuyo/.nuget/packages/system.diagnostics.diagnosticsource/4.3.0/system.diagnostics.diagnosticsource.4.3.0.nupkg.sha512",

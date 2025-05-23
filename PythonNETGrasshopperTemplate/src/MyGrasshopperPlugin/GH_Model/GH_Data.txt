@@ -1,0 +1,2 @@
+Place holder for custom gh_data type implementation.
+https://developer.rhino3d.com/guides/grasshopper/simple-data-types/

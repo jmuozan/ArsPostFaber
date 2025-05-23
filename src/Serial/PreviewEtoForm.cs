@@ -293,10 +293,11 @@ namespace crft
                         return;
                     }
                 }
-                // Panning with Control/Command key + primary click
-                if (e.Buttons == MouseButtons.Primary && e.Modifiers.HasFlag(Keys.Control))
+                // Panning with Control/Command or Shift key + primary click
+                if (e.Buttons == MouseButtons.Primary && (e.Modifiers.HasFlag(Keys.Control) || e.Modifiers.HasFlag(Keys.Shift)))
                 {
                     _panning = true;
+                    return;
                 }
                 // Begin endpoint drag on alternate click
                 else if (e.Buttons == MouseButtons.Alternate)
