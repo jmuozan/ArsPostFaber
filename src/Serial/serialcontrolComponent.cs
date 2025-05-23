@@ -418,9 +418,15 @@ namespace crft
                 toolpath = new PolylineCurve(polyline);
             }
             DA.SetData("Path", toolpath);
-            // Output the G-code commands list (updated for any preview edits)
-            var outputGCode = (_printCommands != null && _printCommands.Count > 0) ? _printCommands : commandsList;
-            DA.SetDataList("GCode", outputGCode);
+            // Output only the remaining G-code commands left to execute
+            List<string> remainingGCode;
+            // Use the active printCommands list if available, else fall back to input commandsList
+            var sourceList = (_printCommands != null && _printCommands.Count > 0) ? _printCommands : commandsList;
+            if (_currentLineIndex >= 0 && _currentLineIndex < sourceList.Count)
+                remainingGCode = sourceList.Skip(_currentLineIndex).ToList();
+            else
+                remainingGCode = new List<string>();
+            DA.SetDataList("GCode", remainingGCode);
         }
         /// <summary>
         /// Add custom UI button under the component for playback control
