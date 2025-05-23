@@ -447,10 +447,24 @@ namespace crft
             {
                 if (!_isPlaying)
                 {
-                    // Apply any preview edits to the print command list
-                    if (_hasPreviewEdits && _lastCommandsList != null && _lastCommandsList.Count > 0)
+                    // Apply any preview edits: rebuild unexecuted commands from edited preview points
+                    if (_hasPreviewEdits && _editedPreviewPoints != null && _editedPreviewPoints.Count > 1)
                     {
-                        _printCommands = new List<string>(_lastCommandsList);
+                        var rebuilt = new List<string>();
+                        // retain already executed commands
+                        for (int j = 0; j < _currentLineIndex && j < _printCommands.Count; j++)
+                            rebuilt.Add(_printCommands[j]);
+                        // generate G1 moves for each edited sample point
+                        foreach (var pt in _editedPreviewPoints)
+                        {
+                            var xs = pt.X.ToString(CultureInfo.InvariantCulture);
+                            var ys = pt.Y.ToString(CultureInfo.InvariantCulture);
+                            var zs = pt.Z.ToString(CultureInfo.InvariantCulture);
+                            rebuilt.Add($"G1 X{xs} Y{ys} Z{zs}");
+                        }
+                        _printCommands = rebuilt;
+                        _hasPreviewEdits = false;
+                        _editedPreviewPoints = null;
                     }
                     // Start or resume printing from current line
                     if (_printThread == null)
