@@ -34,8 +34,21 @@ namespace crft.Slicer
             double isoValue = 0.5;
             if (!DA.GetDataList(0, boxes)) return;
             DA.GetData(1, ref isoValue);
-            // Placeholder: no marching cubes implementation yet
-            DA.SetData(0, new Mesh());
+            // Basic voxel-to-mesh converter: convert each box to brep, mesh and join
+            // Convert each voxel box to a Brep and mesh it
+            var result = new Mesh();
+            var mp = MeshingParameters.Default;
+            foreach (var b in boxes)
+            {
+                var brep = b.ToBrep();
+                var ms = Mesh.CreateFromBrep(brep, mp);
+                if (ms != null)
+                    foreach (var m in ms)
+                        result.Append(m);
+            }
+            result.Normals.ComputeNormals();
+            result.Compact();
+            DA.SetData(0, result);
         }
 
         public override Guid ComponentGuid => new Guid("B2A6F4C7-2345-4D78-BCDE-1234567890AB");

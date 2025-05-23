@@ -186,6 +186,8 @@ namespace crft
             pManager.AddTextParameter("PortEvent", "Evt", "Last event on port", GH_ParamAccess.item);
             // Toolpath curve parsed from G-code commands
             pManager.AddCurveParameter("Path", "Path", "Toolpath curve parsed from G-code commands", GH_ParamAccess.item);
+            // Edited G-code commands after path modification
+            pManager.AddTextParameter("GCode", "G", "Edited G-code commands list after preview edits", GH_ParamAccess.list);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -403,14 +405,21 @@ namespace crft
                     points.Add(currentPoint);
                 }
             }
-            // Output full path as polyline curve
+            // Output full path: use edited preview points if available, otherwise parse commands
             Curve toolpath = null;
-            if (points.Count > 1)
+            if (_hasPreviewEdits && _editedPreviewPoints != null && _editedPreviewPoints.Count > 1)
+            {
+                var editedPoly = new Polyline(_editedPreviewPoints);
+                toolpath = new PolylineCurve(editedPoly);
+            }
+            else if (points.Count > 1)
             {
                 var polyline = new Polyline(points);
                 toolpath = new PolylineCurve(polyline);
             }
             DA.SetData("Path", toolpath);
+            // Output the edited G-code commands list
+            DA.SetDataList("GCode", commandsList);
         }
         /// <summary>
         /// Add custom UI button under the component for playback control
@@ -438,6 +447,11 @@ namespace crft
             {
                 if (!_isPlaying)
                 {
+                    // Apply any preview edits to the print command list
+                    if (_hasPreviewEdits && _lastCommandsList != null && _lastCommandsList.Count > 0)
+                    {
+                        _printCommands = new List<string>(_lastCommandsList);
+                    }
                     // Start or resume printing from current line
                     if (_printThread == null)
                     {
@@ -473,20 +487,17 @@ namespace crft
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "No G-code loaded for preview.");
                 return;
             }
-            // Segment path into executed and unexecuted moves
-            var execTrans = new List<Line>();
-            var execExtr = new List<Line>();
-            var unexecTrans = new List<Line>();
-            var unexecExtr = new List<Line>();
-            var currentPoint = new Point3d(0, 0, 0);
-            double currentE = 0;
+            // Build ordered list of path segments with command mapping
+            var segInfos = new List<Tuple<Point3d, Point3d, Color, int>>();
+            var currentPt = new Point3d(0, 0, 0);
+            double currentEVal = 0;
             for (int i = 0; i < commands.Count; i++)
             {
                 var s = commands[i].Trim();
                 if (s.StartsWith("G0", StringComparison.OrdinalIgnoreCase) || s.StartsWith("G1", StringComparison.OrdinalIgnoreCase))
                 {
-                    double x = currentPoint.X, y = currentPoint.Y, z = currentPoint.Z;
-                    double newE = currentE;
+                    double x = currentPt.X, y = currentPt.Y, z = currentPt.Z;
+                    double newE = currentEVal;
                     var parts = s.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
                     foreach (var p in parts)
                     {
@@ -501,28 +512,15 @@ namespace crft
                             case 'E': newE = val; break;
                         }
                     }
-                    var nextPoint = new Point3d(x, y, z);
-                    var line = new Line(currentPoint, nextPoint);
-                    bool isExtrude = s.StartsWith("G1", StringComparison.OrdinalIgnoreCase) && newE > currentE;
-                    if (i < _currentLineIndex)
-                    {
-                        if (isExtrude) execExtr.Add(line); else execTrans.Add(line);
-                    }
-                    else
-                    {
-                        if (isExtrude) unexecExtr.Add(line); else unexecTrans.Add(line);
-                    }
-                    currentPoint = nextPoint;
-                    currentE = newE;
+                    var nextPt = new Point3d(x, y, z);
+                    bool isExtrude = s.StartsWith("G1", StringComparison.OrdinalIgnoreCase) && newE > currentEVal;
+                    Color col = i < _currentLineIndex ? Color.Orange : (isExtrude ? Color.Red : Color.Blue);
+                    segInfos.Add(Tuple.Create(currentPt, nextPt, col, i));
+                    currentPt = nextPt;
+                    currentEVal = newE;
                 }
             }
-            // Collect segments with colors
-            var segs = new List<Tuple<Point3d, Point3d, Color>>();
-            foreach (var l in execTrans) segs.Add(Tuple.Create(l.From, l.To, Color.Orange));
-            foreach (var l in execExtr) segs.Add(Tuple.Create(l.From, l.To, Color.Orange));
-            foreach (var l in unexecTrans) segs.Add(Tuple.Create(l.From, l.To, Color.Blue));
-            foreach (var l in unexecExtr) segs.Add(Tuple.Create(l.From, l.To, Color.Red));
-            // Include bounding box if enabled
+            // Include bounding box segments if enabled (no command mapping)
             if (_showBBox)
             {
                 var p0 = _homePosition;
@@ -539,54 +537,34 @@ namespace crft
                     new Line(p4, p5), new Line(p5, p6), new Line(p6, p7), new Line(p7, p4),
                     new Line(p0, p4), new Line(p1, p5), new Line(p2, p6), new Line(p3, p7)
                 };
-                foreach (var l in boxLines) segs.Add(Tuple.Create(l.From, l.To, Color.LightBlue));
+                foreach (var l in boxLines) segInfos.Add(Tuple.Create(l.From, l.To, Color.LightBlue, -1));
             }
-            // Compute evenly spaced sample points along unexecuted path, tracking command indices
+            // Compute sample points for preview editing (optional)
             List<Tuple<int, Point3d>> editSamples = null;
             if (_samplesPerSegment > 0)
             {
-                // Only unexecuted moves
-                var unexecLines = unexecTrans.Concat(unexecExtr).ToList();
-                // Map each unexecuted line to its original G-code index
-                var cmdIndices = new List<int>();
-                for (int k = _currentLineIndex; k < commands.Count; k++)
-                {
-                    var s = commands[k].Trim();
-                    if (s.StartsWith("G0", StringComparison.OrdinalIgnoreCase) || s.StartsWith("G1", StringComparison.OrdinalIgnoreCase))
-                        cmdIndices.Add(k);
-                }
-                editSamples = EvenlySampleLinesWithIndices(unexecLines, cmdIndices, _samplesPerSegment);
+                var unexec = segInfos.Where(t => t.Item4 >= _currentLineIndex && (t.Item3 == Color.Blue || t.Item3 == Color.Red)).ToList();
+                var unexecLines = unexec.Select(t => new Line(t.Item1, t.Item2)).ToList();
+                var cmdIdxs = unexec.Select(t => t.Item4).ToList();
+                editSamples = EvenlySampleLinesWithIndices(unexecLines, cmdIdxs, _samplesPerSegment);
             }
             // Show preview window and apply edits on close
             try
             {
-                var form = new PreviewEtoForm(segs, editSamples);
+                var form = new PreviewEtoForm(segInfos, editSamples);
+                // When the preview window is closed (after edits), apply updates and refresh component
+                // When preview window is closed, capture edited sample points as the new path
                 form.Closed += (s, evt) =>
                 {
-                    if (form.EditedSamples != null)
+                    var edited = form.EditedSamples;
+                    if (edited != null && edited.Count > 0)
                     {
-                        // Capture edited preview points to override embedded path
-                        _editedPreviewPoints = form.EditedSamples.Select(t => t.Item2).ToList();
+                        // Order samples by original command index
+                        _editedPreviewPoints = edited
+                            .OrderBy(t => t.Item1)
+                            .Select(t => t.Item2)
+                            .ToList();
                         _hasPreviewEdits = true;
-                        // Update cached G-code commands at sample indices
-                        foreach (var tup in form.EditedSamples)
-                        {
-                            int cmdIdx = tup.Item1;
-                            if (cmdIdx < 0 || cmdIdx >= _lastCommandsList.Count)
-                                continue;
-                            var np = tup.Item2;
-                            var orig = _lastCommandsList[cmdIdx].Trim();
-                            var parts = orig.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).ToList();
-                            var updated = new List<string> { parts[0], $"X{np.X.ToString(CultureInfo.InvariantCulture)}", $"Y{np.Y.ToString(CultureInfo.InvariantCulture)}", $"Z{np.Z.ToString(CultureInfo.InvariantCulture)}" };
-                            foreach (var p in parts.Skip(1))
-                            {
-                                if (!p.StartsWith("X", StringComparison.OrdinalIgnoreCase) && !p.StartsWith("Y", StringComparison.OrdinalIgnoreCase) && !p.StartsWith("Z", StringComparison.OrdinalIgnoreCase))
-                                    updated.Add(p);
-                            }
-                            _lastCommandsList[cmdIdx] = string.Join(" ", updated);
-                            if (_printCommands != null && cmdIdx < _printCommands.Count)
-                                _printCommands[cmdIdx] = _lastCommandsList[cmdIdx];
-                        }
                         ExpireSolution(true);
                     }
                 };

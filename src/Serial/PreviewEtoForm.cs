@@ -15,12 +15,13 @@ namespace crft
     {
         /// <summary>Editable segments with endpoints and color.</summary>
         private readonly List<Segment> _segments;
-        // Internal segment data class
+        // Internal segment data class with command index mapping
         private class Segment
         {
             public Point3d A;
             public Point3d B;
             public System.Drawing.Color Color;
+            public int CmdIdx;
         }
         private readonly List<Point3d> _points;
         private readonly List<Point3d> _samplePoints;
@@ -55,17 +56,17 @@ namespace crft
         private List<PointF> _lassoPath = new List<PointF>();
         private List<int> _selectedSampleIndices = new List<int>();
 
-        public PreviewEtoForm(List<Tuple<Point3d, Point3d, System.Drawing.Color>> segments)
+        public PreviewEtoForm(List<Tuple<Point3d, Point3d, System.Drawing.Color, int>> segments)
         {
             Title = "G-code Path Preview";
             ClientSize = new Size(800, 600);
-            // Initialize editable segments from input tuples
+            // Initialize editable segments from input tuples with mapping to commands
             _segments = new List<Segment>();
             if (segments != null)
             {
                 foreach (var seg in segments)
                 {
-                    _segments.Add(new Segment { A = seg.Item1, B = seg.Item2, Color = seg.Item3 });
+                    _segments.Add(new Segment { A = seg.Item1, B = seg.Item2, Color = seg.Item3, CmdIdx = seg.Item4 });
                 }
             }
             _points = new List<Point3d>();
@@ -139,7 +140,7 @@ namespace crft
         /// <summary>
         /// Constructor with editable sample points for preview (with command indices).
         /// </summary>
-        public PreviewEtoForm(List<Tuple<Point3d, Point3d, System.Drawing.Color>> segments, List<Tuple<int, Point3d>> editSamples)
+        public PreviewEtoForm(List<Tuple<Point3d, Point3d, System.Drawing.Color, int>> segments, List<Tuple<int, Point3d>> editSamples)
             : this(segments)
         {
             _editSamples = editSamples ?? new List<Tuple<int, Point3d>>();
@@ -292,11 +293,17 @@ namespace crft
                         return;
                     }
                 }
-                // Begin endpoint drag
-                if (e.Buttons == MouseButtons.Alternate)
+                // Panning with Control/Command key + primary click
+                if (e.Buttons == MouseButtons.Primary && e.Modifiers.HasFlag(Keys.Control))
+                {
+                    _panning = true;
+                }
+                // Begin endpoint drag on alternate click
+                else if (e.Buttons == MouseButtons.Alternate)
                 {
                     BeginDrag(e.Location);
                 }
+                // Rotate with primary click
                 else if (e.Buttons == MouseButtons.Primary)
                 {
                     _rotating = true;
@@ -494,5 +501,21 @@ namespace crft
         /// Edited sample points with their original command indices.
         /// </summary>
         public List<Tuple<int, Point3d>> EditedSamples => _editSamples;
+        /// <summary>
+        /// Edited segment endpoints mapped to command indices.
+        /// </summary>
+        public List<Tuple<int, Point3d>> EditedSegments
+        {
+            get
+            {
+                var result = new List<Tuple<int, Point3d>>();
+                foreach (var seg in _segments)
+                {
+                    if (seg.CmdIdx >= 0)
+                        result.Add(Tuple.Create(seg.CmdIdx, seg.B));
+                }
+                return result;
+            }
+        }
     }
 }
