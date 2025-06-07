@@ -74,6 +74,46 @@ namespace crft.Slicer
                 double z = minZ + k * dz + dz * 0.5;
                 gcode.Add($"; Layer {k} at Z={z:F3}");
                 gcode.Add($"G1 Z{z:F3} F{feedRate}");
+                // Generate outer perimeter (shell) for this layer
+                var rectCurves = new List<Curve>();
+                foreach (var b in layerBoxes)
+                {
+                    var ptsRect = new Polyline(new[]
+                    {
+                        new Point3d(b.X.Min, b.Y.Min, z),
+                        new Point3d(b.X.Max, b.Y.Min, z),
+                        new Point3d(b.X.Max, b.Y.Max, z),
+                        new Point3d(b.X.Min, b.Y.Max, z),
+                        new Point3d(b.X.Min, b.Y.Min, z)
+                    });
+                    rectCurves.Add(ptsRect.ToNurbsCurve());
+                }
+                double tol = Rhino.RhinoDoc.ActiveDoc.ModelAbsoluteTolerance;
+                Curve[] unionCurves = Curve.CreateBooleanUnion(rectCurves, tol);
+                if (unionCurves != null && unionCurves.Length > 0)
+                {
+                    var unionList = new List<Curve>(unionCurves);
+                    unionList.Sort((c1, c2) =>
+                    {
+                        double area1 = AreaMassProperties.Compute(c1).Area;
+                        double area2 = AreaMassProperties.Compute(c2).Area;
+                        return area2.CompareTo(area1);
+                    });
+                    var shell = unionList[0];
+                    _paths.Add(shell);
+                    Polyline shellPoly;
+                    if (shell.TryGetPolyline(out shellPoly))
+                    {
+                        var shellPts = shellPoly.ToArray();
+                        int count = shellPts.Length;
+                        if (shellPts[0].DistanceTo(shellPts[count - 1]) < tol) count--;
+                        gcode.Add("; Perimeter");
+                        gcode.Add($"G1 X{shellPts[0].X:F3} Y{shellPts[0].Y:F3} F{feedRate}");
+                        for (int i = 1; i < count; i++)
+                            gcode.Add($"G1 X{shellPts[i].X:F3} Y{shellPts[i].Y:F3} F{feedRate}");
+                        gcode.Add($"G1 X{shellPts[0].X:F3} Y{shellPts[0].Y:F3} F{feedRate}");
+                    }
+                }
                 // Sort by X then Y
                 layerBoxes.Sort((b1, b2) =>
                 {
