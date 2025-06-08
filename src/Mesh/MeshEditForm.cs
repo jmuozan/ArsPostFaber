@@ -4,6 +4,9 @@ using System.Linq;
 using Eto.Forms;
 using Eto.Drawing;
 using Rhino.Geometry;
+using System.Diagnostics;
+using System.Threading;
+using System.IO;
 
 namespace crft
 {
@@ -14,10 +17,19 @@ namespace crft
     {
         private List<Point3d> _vertices;
         private readonly List<int[]> _faces;
-        private enum Mode { View, Edit }
+        private enum Mode { View, Edit, Hands }
         private Mode _mode = Mode.View;
         private readonly ComboBox _modeSelector;
         private readonly ComboBox _viewSelector;
+        private readonly ComboBox _toolSelector;
+        private Process _handProcess;
+        private Thread _handTrackingThread;
+        private readonly PointF[] _handPoints = new PointF[21];
+        private bool _handDragging;
+        // Default camera resolution for hand tracking overlay
+        private const int CamWidth = 640;
+        private const int CamHeight = 480;
+        private readonly float _pinchThreshold = 60f;
         private bool _isLassoing = false;
         private List<PointF> _lassoPath = new List<PointF>();
         private List<int> _selectedVertices = new List<int>();
@@ -70,7 +82,7 @@ namespace crft
             var saveButton = new Button { Text = "Save" };
             saveButton.Click += (s, e) =>
             {
-                // Construct new mesh from edited vertices and faces
+                // Construct the new mesh from edited vertices and faces
                 var newMesh = new Mesh();
                 foreach (var v in _vertices)
                     newMesh.Vertices.Add(v);
@@ -91,7 +103,12 @@ namespace crft
             _modeSelector = new ComboBox { Items = { "View", "Edit" }, SelectedIndex = 0 };
             _modeSelector.SelectedIndexChanged += (s, e) =>
             {
-                _mode = _modeSelector.SelectedIndex == 0 ? Mode.View : Mode.Edit;
+                _mode = _modeSelector.SelectedIndex switch
+                {
+                    0 => Mode.View,
+                    1 => Mode.Edit,
+                    2 => Mode.Hands
+                };
                 _isLassoing = false;
                 _isGroupDragging = false;
                 _lassoPath.Clear();
@@ -122,11 +139,18 @@ namespace crft
                 ComputeBounds();
                 _canvas.Invalidate();
             };
+            // Tool selector (Mouse/Hand)
+            _toolSelector = new ComboBox { Items = { "Mouse", "Hand" }, SelectedIndex = 0 };
+            _toolSelector.SelectedIndexChanged += (s, e) =>
+            {
+                if (_toolSelector.SelectedIndex == 1) StartHandTracking(); else StopHandTracking();
+                _canvas.Invalidate();
+            };
             var layout = new DynamicLayout { DefaultSpacing = new Size(5, 5), Padding = new Padding(5) };
             layout.BeginVertical();
             layout.Add(new TableLayout
             {
-                Rows = { new TableRow(resetButton, _modeSelector, _viewSelector, saveButton) }
+                Rows = { new TableRow(resetButton, _modeSelector, _viewSelector, _toolSelector, saveButton) }
             });
             layout.Add(_canvas, yscale: true);
             layout.EndVertical();
@@ -164,6 +188,23 @@ namespace crft
         {
             var cw = ClientSize.Width;
             var ch = ClientSize.Height;
+            // Hand landmark overlay in Hand mode
+            if (_toolSelector.SelectedIndex == 1)
+            {
+                float fx = cw / CamWidth;
+                float fy = ch / CamHeight;
+                using (var b = new SolidBrush(Colors.Lime))
+                {
+                    foreach (var p in _handPoints)
+                        g.FillEllipse(b, p.X * fx - 3, p.Y * fy - 3, 6, 6);
+                }
+                using (var pen = new Pen(Colors.Lime, 2))
+                {
+                    var p4 = _handPoints[4];
+                    var p8 = _handPoints[8];
+                    g.DrawLine(pen, p4.X * fx, p4.Y * fy, p8.X * fx, p8.Y * fy);
+                }
+            }
             var cx = cw / 2f + _panX;
             var cy = ch / 2f + _panY;
             // Compute view direction for shading
@@ -417,6 +458,126 @@ namespace crft
                 j = i;
             }
             return result;
+        }
+
+        private void StartHandTracking()
+        {
+            StopHandTracking();
+            try
+            {
+                var scriptPath = Path.Combine(Directory.GetCurrentDirectory(), "src", "hands.py");
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "python3",
+                    // -E ignores PYTHONHOME and PYTHONPATH to use clean stdlib
+                    Arguments = $"-E \"{scriptPath}\" --headless",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WorkingDirectory = Directory.GetCurrentDirectory()
+                };
+                // Prevent any PYTHONHOME/PYTHONPATH from interfering
+                startInfo.Environment.Remove("PYTHONHOME");
+                startInfo.Environment.Remove("PYTHONPATH");
+                _handProcess = Process.Start(startInfo);
+                if (_handProcess == null)
+                {
+                    MessageBox.Show(this, "Could not start Python hand tracking script. Ensure python3 is installed and in PATH.",
+                        MessageBoxButtons.OK, MessageBoxType.Error);
+                    return;
+                }
+                // capture stderr to show errors
+                _handProcess.ErrorDataReceived += (s, e) =>
+                {
+                    if (string.IsNullOrEmpty(e.Data)) return;
+                    // Ignore Python environment diagnostic prints and harmless warnings
+                    var line = e.Data.Trim();
+                    var ignore = new[] { "INFO:", "WARNING:", "objc[", "Python path configuration:", "PYTHONHOME", "PYTHONPATH", "program name", "isolated", "environment", "safe_path", "user site", "import site", "import: \"site\"", "is in build tree", "stdlib dir", "sys." };
+                    if (ignore.Any(p => line.StartsWith(p, StringComparison.OrdinalIgnoreCase))) return;
+                    Application.Instance.Invoke(() =>
+                    {
+                        var msg = line;
+                        if (line.Contains("No module named", StringComparison.Ordinal))
+                            msg += "\n\nPlease install required Python packages with:\n    pip3 install mediapipe opencv-python numpy";
+                        MessageBox.Show(this, $"Hand tracking error:\n{msg}", MessageBoxButtons.OK, MessageBoxType.Error);
+                    });
+                };
+                _handProcess.BeginErrorReadLine();
+                // notify user that script launched
+                MessageBox.Show(this, "Hand tracking process launched.",
+                    MessageBoxButtons.OK, MessageBoxType.Information);
+                _handTrackingThread = new Thread(() =>
+                {
+                    bool pinched = false;
+                    string line;
+                    while (_handProcess != null && !_handProcess.HasExited && (line = _handProcess.StandardOutput.ReadLine()) != null)
+                    {
+                        var parts = line.Split(' ');
+                        if (parts.Length < 5) continue;
+                        if (!float.TryParse(parts[0], out var tx)) continue;
+                        if (!float.TryParse(parts[1], out var ty)) continue;
+                        if (!float.TryParse(parts[2], out var ix)) continue;
+                        if (!float.TryParse(parts[3], out var iy)) continue;
+                        if (!float.TryParse(parts[4], out var dist)) continue;
+                        Application.Instance.Invoke(() =>
+                        {
+                            var cx = ClientSize.Width;
+                            var cy = ClientSize.Height;
+                            var mx = (tx + ix) * 0.5f * cx;
+                            var my = (ty + iy) * 0.5f * cy;
+                            var loc = new PointF(mx, my);
+                            var downArgs = new MouseEventArgs(MouseButtons.Primary, Keys.None, loc, null, 1f);
+                            var moveArgs = new MouseEventArgs(MouseButtons.Primary, Keys.None, loc, null, 1f);
+                            var upArgs = new MouseEventArgs(MouseButtons.Primary, Keys.None, loc, null, 1f);
+                            if (!pinched && dist < 0.08f)
+                            {
+                                pinched = true;
+                                if (_mode == Mode.Edit && _selectedVertices.Count > 0)
+                                {
+                                    _isGroupDragging = true;
+                                    _initialSelected = _selectedVertices.Select(i => _vertices[i]).ToList();
+                                    _dragRefZ = _initialSelected.Average(p => p.Z);
+                                    _dragAnchorWorld = Unproject(loc, _dragRefZ);
+                                }
+                            }
+                            else if (pinched && dist < 0.08f)
+                            {
+                                Canvas_MouseMove(_canvas, moveArgs);
+                            }
+                            else if (pinched && dist >= 0.08f)
+                            {
+                                Canvas_MouseUp(_canvas, upArgs);
+                                pinched = false;
+                            }
+                        });
+                    }
+                }) { IsBackground = true };
+                _handTrackingThread.Start();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to start hand tracking process: {ex}");
+            }
+        }
+
+        private void StopHandTracking()
+        {
+            // TODO: stop hand tracking process
+        if (_handProcess != null)
+        {
+            try { _handProcess.Kill(); } catch { }
+        }
+        if (_handTrackingThread != null)
+        {
+            _handTrackingThread.Join();
+            _handTrackingThread = null;
+        }
+        if (_handProcess != null)
+        {
+            try { _handProcess.Dispose(); } catch { }
+            _handProcess = null;
+        }
         }
     }
 }
