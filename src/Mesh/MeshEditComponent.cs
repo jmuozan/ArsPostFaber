@@ -7,13 +7,13 @@ namespace crft
     /// <summary>
     /// Component that edits and previews a mesh with vertex selection.
     /// </summary>
-    public class MeshPreviewComponent : GH_Component
+    public class MeshEditComponent : GH_Component
     {
         private Mesh _mesh;
         private Mesh _editedMesh;
         private bool _hasEdits;
 
-        public MeshPreviewComponent()
+        public MeshEditComponent()
           : base("Mesh Edit", "MeshEdit",
               "Edit and preview mesh with vertex selection", "crft", "Mesh")
         {

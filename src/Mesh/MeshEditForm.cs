@@ -473,7 +473,7 @@ namespace crft
             StopHandTracking();
             try
             {
-                var scriptPath = Path.Combine(Directory.GetCurrentDirectory(), "src", "hands.py");
+                var scriptPath = Path.Combine(Directory.GetCurrentDirectory(), "scripts", "meshedit", "hands.py");
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = "python3",

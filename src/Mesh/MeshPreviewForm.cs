@@ -25,7 +25,7 @@ namespace crft
 
         public MeshPreviewForm(Mesh mesh)
         {
-            Title = "Mesh Preview";
+            Title = "Mesh Edit";
             ClientSize = new Size(800, 600);
             // Duplicate mesh to avoid modifying original
             var m = mesh.DuplicateMesh();

@@ -78,7 +78,7 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Hand tracking Python script -->
-    <None Include="src/main.py">
+    <None Include="scripts/meshedit/hands.py">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
