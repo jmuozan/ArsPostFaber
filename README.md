@@ -232,8 +232,9 @@ See the `LICENSE` file for details.
 
 
 ## ToDo
-- [ ] Implement Depth Maps for SfM 3D reconstruction
-- [ ] solve gcode implementation
+- [ ] photogrammetry make it work
+- [ ] box break for photogrammetry
+- [ ] gcode code from gh file
 - [ ] Sculpt module
 - [ ] llm vision
 - [x] llm chat
