@@ -232,7 +232,7 @@ See the `LICENSE` file for details.
 
 
 ## ToDo
-- [ ] photogrammetry make it work
+- [x] photogrammetry make it work
 - [ ] box break for photogrammetry
 - [ ] gcode code from gh file
 - [ ] Sculpt module

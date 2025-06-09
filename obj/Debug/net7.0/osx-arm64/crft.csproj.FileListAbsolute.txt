@@ -161,5 +161,7 @@
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/libOpenCvSharpExtern.dylib
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/libSystem.IO.Ports.Native.dylib
 /Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/scripts/meshedit/hands.py
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/scripts/photogrammetry/HelloPhotogrammetry
+/Users/jorgemuyo/Desktop/crft/bin/Debug/net7.0/osx-arm64/QRCoder.dll
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.sourcelink.json
 /Users/jorgemuyo/Desktop/crft/obj/Debug/net7.0/osx-arm64/crft.csproj.Up2Date

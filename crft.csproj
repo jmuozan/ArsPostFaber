@@ -133,10 +133,11 @@
     <EmbeddedResource Include="scripts\meshedit\meshedit.py" />
     <EmbeddedResource Include="scripts\meshedit\hands.py" />
   </ItemGroup>
-  <!-- Embed SAM scripts and segmentanything folder -->
+  <!-- Include photogrammetry binary in output -->
   <ItemGroup>
-    <EmbeddedResource Include="scripts\run_sam.sh" />
-    <EmbeddedResource Include="scripts\segmentanything\**\*.*" />
+    <None Include="scripts\photogrammetry\HelloPhotogrammetry">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <!-- Include context_for_llm folder content in output for LLM context -->
   <ItemGroup>
@@ -149,6 +150,10 @@
     <!-- Eto.Forms and Mac platform implementation for cross-platform preview -->
     <PackageReference Include="Eto.Forms" Version="2.5.1" />
     <PackageReference Include="Eto.Platform.Mac64" Version="2.5.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- QR code generation library -->
+    <PackageReference Include="QRCoder" Version="1.4.3" />
   </ItemGroup>
 
 </Project>

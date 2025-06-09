@@ -23,6 +23,7 @@
           "OpenCvSharp4.runtime.osx.10.15-universal": "4.7.0.20230224",
           "PdfPig": "0.1.9",
           "Python.Runtime": "2.7.9",
+          "QRCoder": "1.4.3",
           "SerialPortStream": "2.4.2",
           "System.CodeDom": "7.0.0",
           "System.Drawing.Common": "8.0.0",
@@ -526,6 +527,14 @@
         }
       },
       "Python.Runtime/2.7.9": {},
+      "QRCoder/1.4.3": {
+        "runtime": {
+          "lib/net6.0/QRCoder.dll": {
+            "assemblyVersion": "1.4.3.0",
+            "fileVersion": "1.4.3.0"
+          }
+        }
+      },
       "RhinoCommon/8.0.23304.9001": {},
       "runtime.any.System.Collections/4.3.0": {
         "dependencies": {
@@ -1803,6 +1812,13 @@
       "sha512": "sha512-NBS5t9KJvBVDoAFsVOQ79Ri133Hir8O6sqcEZJufXLVvlReXvzyZKhkcO5fpWcqjj6798qrWd/tO/TXCx2Ga7g==",
       "path": "python.runtime/2.7.9",
       "hashPath": "python.runtime.2.7.9.nupkg.sha512"
+    },
+    "QRCoder/1.4.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-fWuFqjm8GTlEb2GqBl3Hi8HZZeZQwBSHxvRPtPjyNbT82H0ff0JwavKRBmMaXCno1Av6McPC8aJzri0Mj2w9Jw==",
+      "path": "qrcoder/1.4.3",
+      "hashPath": "qrcoder.1.4.3.nupkg.sha512"
     },
     "RhinoCommon/8.0.23304.9001": {
       "type": "package",
