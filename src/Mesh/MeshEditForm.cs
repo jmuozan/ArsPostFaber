@@ -44,6 +44,7 @@ namespace crft
         private Point3d _center;
         private readonly Drawable _canvas;
         private PointF _lastMouse;
+        private PointF? _handCursor;
         private bool _rotating, _panning;
 
 
@@ -264,6 +265,13 @@ namespace crft
                     var p2 = Project(_vertices[idx], cx, cy);
                     g.FillEllipse(brush, p2.X - 4, p2.Y - 4, 8, 8);
                 }
+            }
+            // Draw pinch cursor overlay on top of mesh
+            if (_toolSelector.SelectedIndex == 1 && _handCursor.HasValue)
+            {
+                var p = _handCursor.Value;
+                using var overlayBrush = new SolidBrush(new Color(Colors.Lime.R, Colors.Lime.G, Colors.Lime.B, 0.25f));
+                g.FillEllipse(overlayBrush, p.X - 20, p.Y - 20, 40, 40);
             }
         }
 
@@ -494,7 +502,7 @@ namespace crft
                     // Ignore Python environment diagnostic prints and harmless warnings
                     var line = e.Data.Trim();
                     var ignore = new[] { "INFO:", "WARNING:", "objc[", "Python path configuration:", "PYTHONHOME", "PYTHONPATH", "program name", "isolated", "environment", "safe_path", "user site", "import site", "import: \"site\"", "is in build tree", "stdlib dir", "sys." };
-                    if (ignore.Any(p => line.StartsWith(p, StringComparison.OrdinalIgnoreCase))) return;
+                    if (ignore.Any(p => line.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0)) return;
                     Application.Instance.Invoke(() =>
                     {
                         var msg = line;
@@ -524,9 +532,13 @@ namespace crft
                         {
                             var cx = ClientSize.Width;
                             var cy = ClientSize.Height;
-                            var mx = (tx + ix) * 0.5f * cx;
-                            var my = (ty + iy) * 0.5f * cy;
+                            var normX = (tx + ix) * 0.5f;
+                            var normY = (ty + iy) * 0.5f;
+                            var mx = (1 - normX) * cx;
+                            var my = normY * cy;
                             var loc = new PointF(mx, my);
+                            _handCursor = loc;
+                            _canvas.Invalidate();
                             var downArgs = new MouseEventArgs(MouseButtons.Primary, Keys.None, loc, null, 1f);
                             var moveArgs = new MouseEventArgs(MouseButtons.Primary, Keys.None, loc, null, 1f);
                             var upArgs = new MouseEventArgs(MouseButtons.Primary, Keys.None, loc, null, 1f);
@@ -577,6 +589,8 @@ namespace crft
         {
             try { _handProcess.Dispose(); } catch { }
             _handProcess = null;
+            _handCursor = null;
+            _canvas.Invalidate();
         }
         }
     }

@@ -76,6 +76,12 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <!-- Hand tracking Python script -->
+    <None Include="src/main.py">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
   
   <!-- Use RuntimeIdentifier to ensure native libraries are properly included -->
   <PropertyGroup Condition="'$(OS)' != 'Windows_NT'">

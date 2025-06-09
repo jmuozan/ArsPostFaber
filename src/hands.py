@@ -1,6 +1,23 @@
-import cv2
-import mediapipe as mp
-import numpy as np
+import sys
+import subprocess
+
+# Auto-install missing dependencies
+required = ["mediapipe","opencv-python","numpy"]
+try:
+    import cv2
+    import mediapipe as mp
+    import numpy as np
+except ModuleNotFoundError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--user"] + required)
+    import cv2
+    import mediapipe as mp
+    import numpy as np
+
+import argparse
+
+parser = argparse.ArgumentParser(description="Hand tracking utility")
+parser.add_argument("--headless", action="store_true", help="Run in headless mode for event streaming")
+args = parser.parse_args()
 
 mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
@@ -74,6 +91,29 @@ with mp_hands.Hands(
     for hand_world_landmarks in results.multi_hand_world_landmarks:
       mp_drawing.plot_landmarks(
         hand_world_landmarks, mp_hands.HAND_CONNECTIONS, azimuth=5)
+
+# For webcam input:
+if args.headless:
+    cap = cv2.VideoCapture(0)
+    with mp_hands.Hands(
+        model_complexity=0,
+        max_num_hands=1,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5) as hands:
+        while cap.isOpened():
+            success, image = cap.read()
+            if not success:
+                continue
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = hands.process(image)
+            if results.multi_hand_landmarks:
+                hand_landmarks = results.multi_hand_landmarks[0]
+                thumb_tip = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
+                index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+                dist = calculate_distance(thumb_tip, index_tip)
+                print(f"{thumb_tip.x} {thumb_tip.y} {index_tip.x} {index_tip.y} {dist}", flush=True)
+    cap.release()
+    sys.exit(0)
 
 # For webcam input:
 cap = cv2.VideoCapture(0)
