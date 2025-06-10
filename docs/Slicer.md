@@ -14,12 +14,13 @@ This document describes how to use the new Slicer components in **crft** to gene
     - Nozzle Diameter (ND): nozzle diameter in mm (default 0.4)
   - Output:
     - Settings (S): a **SlicerSettings** object encapsulating the parameters
-
+-
 - **Slice Geometry** (Category: crft > Slicer)
   - Inputs:
     - Geometry (G): Brep or Mesh to slice
     - Settings (S): input from **Slicer Settings**
-  - Output:
+  - Outputs:
+    - Settings (S): pass-through **SlicerSettings** object
     - Layers (L): tree of curves, one branch per layer at successive Z heights
 
 - **G-Code Generator** (Category: crft > Slicer)
@@ -35,7 +36,7 @@ This document describes how to use the new Slicer components in **crft** to gene
 1. Place the **Slicer Settings** component and configure slicing parameters.
 2. Connect your Brep or Mesh to the **Slice Geometry** component along with the **Settings** output.
 3. The **Slice Geometry** component returns a tree of curves, one branch per layer.
-4. Connect the **Settings** and **Layers** outputs to the **G-Code Generator**.
+4. Connect the **Settings** (S) and **Layers** (L) outputs of **Slice Geometry** to the respective inputs of the **G-Code Generator**.
 5. (Optional) Provide **Start** and **End** custom G-Code lines, or let defaults be used.
 6. The **G-Code** output can be baked to a text panel or written to a file using a file writer component.
 
