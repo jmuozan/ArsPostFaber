@@ -1,31 +1,28 @@
-# Ignore build outputs
+# Build outputs
 /bin/
 /obj/
 *.suo
 *.user
 *.cache
 
-# Ignore Python cache
+#Python stuff
 __pycache__/
 
-# Ignore backup and support directories
+# Backup and support directories
 /backup/
 /Support/
-
-# Ignore residual backups
 *.bak
 
-# Ignore Visual Studio files
+# Visual Studio stuff
 .vs/
+.vscode/
 
-# Ignore macOS system files
+# Ignore macOS crap
 .DS_Store
 *DS_Store*
 **/.DS_Store
-.vscode/
+
+# LLM stuff
 KEY.txt
-
-
-scripts/segmentanything/sam2/utils/__pycache__
 .claude
 GeneratedComponents
