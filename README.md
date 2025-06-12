@@ -219,7 +219,20 @@ To build the plugin, run:
 dotnet build -clp:NoSummary crft.csproj
 ```
 
-Or use the VS Code task labeled `build`.
+ Or use the VS Code task labeled `build`.
+
+## Debugging / Development
+
+When working on crft and debugging in Rhino + Grasshopper, you may encounter conflicts with other installed Grasshopper plugins (e.g., bf7_Installer) that can crash Rhino on startup. To streamline development, use the provided script to temporarily disable bf7_Installer, launch Rhino, and restore it afterward:
+
+```bash
+bash scripts/start-rhino-dev.sh
+```
+
+This script will:
+- Move `bf7_Installer.gha` and `.rhp` out of your Grasshopper Libraries folder.
+- Launch Rhino and wait for it to exit.
+- Restore `bf7_Installer` once Rhino is closed.
 
 ## Usage
 - Run `download_models.sh` to fetch required models.

@@ -14,7 +14,7 @@ This document describes how to use the new Slicer components in **crft** to gene
     - Nozzle Diameter (ND): nozzle diameter in mm (default 0.4)
   - Output:
     - Settings (S): a **SlicerSettings** object encapsulating the parameters
--
+
 - **Slice Geometry** (Category: crft > Slicer)
   - Inputs:
     - Geometry (G): Brep or Mesh to slice
@@ -23,14 +23,31 @@ This document describes how to use the new Slicer components in **crft** to gene
     - Settings (S): pass-through **SlicerSettings** object
     - Layers (L): tree of curves, one branch per layer at successive Z heights
 
-- **G-Code Generator** (Category: crft > Slicer)
+- **Shell Geometry** (Category: crft > Slicer)
   - Inputs:
     - Settings (S): from **Slicer Settings**
     - Layers (L): from **Slice Geometry**
+  - Outputs:
+    - Settings (S): pass-through **SlicerSettings** object
+    - Shells (C): shell offset curves per layer
+    - Region (R): innermost region curves per layer
+
+- **Infill Geometry** (Category: crft > Slicer)
+  - Inputs:
+    - Settings (S): from **Slicer Settings**
+    - Region (R): from **Shell Geometry**
+  - Outputs:
+    - Settings (S): pass-through **SlicerSettings** object
+    - Infill (I): infill curves per layer
+
+- **G-Code Generator** (Category: crft > Slicer)
+  - Inputs:
+    - Settings (S): from **Slicer Settings**
+    - Shells (C): from **Shell Geometry**
+    - Infill (I): optional, from **Infill Geometry**
     - Start: optional list of G-Code header lines
     - End: optional list of G-Code footer lines
-  - Output:
-    - G-Code (G): list of G-Code commands as strings
+
 
 ## Workflow
 1. Place the **Slicer Settings** component and configure slicing parameters.
