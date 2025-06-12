@@ -63,21 +63,11 @@
 
 <!-- ABOUT THE PROJECT -->
 ## About The Project
-crft is a Rhino Grasshopper plugin that provides experimental components for bridging software, hardware, and human interaction in 3D printing workflows.
-
-Key features:
-- **Atoms to Bits**: Mesh digitization workflows converting physical objects into digital representations.
-- **Mesh Editing with Hand Detection**: Real-time mesh manipulation using hand tracking and AI.
-- **Machine Live Control**: Interactive control of devices, including 3D printers.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ### Built With
-- .NET 7.0
-- Rhino 8 SDK (Grasshopper 8)
-- C#, Grasshopper SDK
-- SerialPortStream 2.4.2 (RJCP)
-- System.IO.Ports
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -85,29 +75,15 @@ Key features:
 Follow these steps to set up the plugin locally.
 
 ### Prerequisites
-- Rhino 8 + Grasshopper
-- .NET 7.0 SDK
-- USB drivers for serial communication (ensure permissions on macOS/Linux)
+
 
 ### Installation
-1. Clone the repository:
-   ```sh
-   git clone https://github.com/github_username/crft.git
-   ```
-2. Open `crft.sln` in your IDE.
-3. Build the `crft` project in Release mode.
-4. Copy `crft.gha` from:
-   - Windows: `bin\\Release\\net7.0-windows\\crft.gha`
-   - macOS: `bin/Release/net7.0/osx-arm64/crft.gha`
-5. Paste `crft.gha` into your Grasshopper components folder and restart Rhino.
+
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Usage
-### G-code Generation
-
-
-### Serial Communication
 
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -151,7 +127,7 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 jmuozan - [@jorgemunyozz](https://twitter.com/jorgemunyozz) - jmuozan@gmail.com
 
-Project Link: [https://github.com/github_username/repo_name](https://github.com/jmuozan/ArsPostFaber)
+Project Link: [here](https://jmuozan.github.io/ArsPostFaber-docs/)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -159,6 +135,8 @@ Project Link: [https://github.com/github_username/repo_name](https://github.com/
 
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
+
+Amazing projects that have inspired and helped the developement of this project
 
 * [t43](https://github.com/LingDong-/t43?tab=readme-ov-file)
 * [Robots](https://github.com/visose/Robots)
@@ -195,61 +173,18 @@ Project Link: [https://github.com/github_username/repo_name](https://github.com/
 
 
 
-
-## Overview
-crft is a set of Grasshopper components for Rhino, forming a plugin that explores human-software-machine interaction (HMI). The components are designed as an experimental toolkit for bridging the physical and digital worlds, focusing on:
-
-- **Atoms to Bits**: Mesh digitization workflows, enabling the conversion of physical objects into digital mesh representations.
-- **Mesh Editing with Hand Detection**: Real-time mesh manipulation using hand tracking and gesture recognition, leveraging computer vision and AI.
-- **Machine Live Control**: Components for live, interactive control of digital and physical systems, exploring new paradigms of HMI.
-
-## Features
-- Real-time camera and video capture integration.
-- Hand tracking and gesture-based mesh editing.
-- Mesh digitization and manipulation tools.
-- Experimental interfaces for live machine control.
-
 ## Repository Structure
 
 
 ## Build Instructions
-To build the plugin, run:
 
-```bash
-dotnet build -clp:NoSummary crft.csproj
-```
-
- Or use the VS Code task labeled `build`.
 
 ## Debugging / Development
 
-When working on crft and debugging in Rhino + Grasshopper, you may encounter conflicts with other installed Grasshopper plugins (e.g., bf7_Installer) that can crash Rhino on startup. To streamline development, use the provided script to temporarily disable bf7_Installer, launch Rhino, and restore it afterward:
-
-```bash
-bash scripts/start-rhino-dev.sh
-```
-
-This script will:
-- Move `bf7_Installer.gha` and `.rhp` out of your Grasshopper Libraries folder.
-- Launch Rhino and wait for it to exit.
-- Restore `bf7_Installer` once Rhino is closed.
-
-## Usage
-- Run `download_models.sh` to fetch required models.
-- Load the compiled plugin (`crft.gha`) into Grasshopper for Rhino.
-- Explore the provided Grasshopper components for mesh digitization, hand-based mesh editing, and live control experiments.
-
-## License
-See the `LICENSE` file for details.
 
 
 
 ## ToDo
-- [x] photogrammetry make it work
-- [ ] box break for photogrammetry
 - [ ] gcode code from gh file
 - [ ] Sculpt module
 - [ ] llm vision
-- [x] llm chat
-- [x] llm create your own components???
-- [x] Program simulation
