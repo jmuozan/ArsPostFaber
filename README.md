@@ -21,7 +21,7 @@
   <p align="center">
     Art Post Artisan
     <br />
-    <a href="https://github.com/github_username/repo_name"><strong>Explore the docs »</strong></a>
+    <a href="https://jmuozan.github.io/ArsPostFaber-docs/"><strong>Explore the docs »</strong></a>
     <br />
     <br />
     <a href="https://github.com/github_username/repo_name">View Demo</a>
