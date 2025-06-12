@@ -68,8 +68,19 @@ namespace crft
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Invalid Brep input.");
                 return;
             }
-            // Compute bounds and slicing
+            // Compute bounds for Z-slicing and center geometry on bed in XY
             var bbox = sliceBrep.GetBoundingBox(true);
+            // Translate geometry so its XY center aligns with bed center
+            if (settings.BedWidth > 0 && settings.BedDepth > 0)
+            {
+                double centerX = (bbox.Min.X + bbox.Max.X) / 2.0;
+                double centerY = (bbox.Min.Y + bbox.Max.Y) / 2.0;
+                double bedCenterX = settings.BedWidth / 2.0;
+                double bedCenterY = settings.BedDepth / 2.0;
+                var translation = new Rhino.Geometry.Vector3d(bedCenterX - centerX, bedCenterY - centerY, 0);
+                sliceBrep = sliceBrep.DuplicateBrep();
+                sliceBrep.Transform(Rhino.Geometry.Transform.Translation(translation));
+            }
             double zmin = bbox.Min.Z;
             double zmax = bbox.Max.Z;
             int layerCount = (int)Math.Floor((zmax - zmin) / settings.LayerHeight) + 1;

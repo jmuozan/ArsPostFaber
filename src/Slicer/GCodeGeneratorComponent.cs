@@ -4,6 +4,7 @@ using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
+using System.Linq;
 
 namespace crft
 {
@@ -53,6 +54,8 @@ namespace crft
             DA.GetDataList(3, startLines);
             DA.GetDataList(4, endLines);
             var lines = new List<string>();
+            // Always home axes at start
+            lines.Add("G28");
             if (startLines.Count > 0)
                 lines.AddRange(startLines);
             else
@@ -61,6 +64,8 @@ namespace crft
                 lines.Add("G90");
             }
             double e = 0.0;
+            // Precompute smoothing angle in radians
+            double smoothingAngleRad = settings.SmoothingAngle * Math.PI / 180.0;
             // Iterate through each layer branch
             // Iterate through each layer: shells then infill
             int pathCount = shellTree.PathCount;
@@ -79,7 +84,8 @@ namespace crft
                         if (!crv.TryGetPolyline(out polyline))
                         {
                             double length = crv.GetLength();
-                            int divisions = (int)Math.Ceiling(length / settings.NozzleDiameter);
+                            double maxSeg = settings.MaxSegmentLength > 0 ? settings.MaxSegmentLength : settings.NozzleDiameter;
+                            int divisions = (int)Math.Ceiling(length / maxSeg);
                             divisions = Math.Max(divisions, 1);
                             var pts = new List<Point3d>();
                             for (int j = 0; j <= divisions; j++)
@@ -89,6 +95,9 @@ namespace crft
                             }
                             polyline = new Polyline(pts);
                         }
+                        // Apply smoothing decimation
+                        if (smoothingAngleRad > 0.0)
+                            polyline = SimplifyPolyline(polyline, smoothingAngleRad);
                         if (polyline.Count < 2) continue;
                         var prev = polyline[0];
                         lines.Add($"G0 X{prev.X:F3} Y{prev.Y:F3} Z{prev.Z:F3}");
@@ -111,6 +120,9 @@ namespace crft
                         var crv = ghc?.Value;
                         if (crv == null) continue;
                         if (!crv.TryGetPolyline(out Polyline polyline)) continue;
+                        // Apply smoothing decimation
+                        if (smoothingAngleRad > 0.0)
+                            polyline = SimplifyPolyline(polyline, smoothingAngleRad);
                         var prev = polyline[0];
                         lines.Add($"G0 X{prev.X:F3} Y{prev.Y:F3} Z{prev.Z:F3}");
                         for (int k = 1; k < polyline.Count; k++)
@@ -127,6 +139,31 @@ namespace crft
             if (endLines.Count > 0)
                 lines.AddRange(endLines);
             DA.SetDataList(0, lines);
+        }
+        /// <summary>
+        /// Simplifies a polyline by merging nearly collinear segments within an angular tolerance.
+        /// </summary>
+        private static Polyline SimplifyPolyline(Polyline poly, double angleTolRad)
+        {
+            if (angleTolRad <= 0 || poly.Count < 3)
+                return poly;
+            double cosTol = Math.Cos(angleTolRad);
+            var pts = poly.ToArray();
+            var outPts = new List<Point3d> { pts[0] };
+            Vector3d prevDir = pts[1] - pts[0];
+            prevDir.Unitize();
+            for (int i = 2; i < pts.Length; i++)
+            {
+                var currDir = pts[i] - pts[i - 1];
+                currDir.Unitize();
+                if (Vector3d.Multiply(prevDir, currDir) < cosTol)
+                {
+                    outPts.Add(pts[i - 1]);
+                    prevDir = currDir;
+                }
+            }
+            outPts.Add(pts[pts.Length - 1]);
+            return new Polyline(outPts);
         }
 
         protected override System.Drawing.Bitmap Icon => null;
