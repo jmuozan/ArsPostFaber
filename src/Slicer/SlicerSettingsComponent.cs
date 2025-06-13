@@ -27,11 +27,13 @@ namespace crft
             pManager.AddNumberParameter("Bed Depth", "BD", "Bed depth (mm)", GH_ParamAccess.item, 200.0);
             pManager.AddNumberParameter("Max Segment Length", "ML", "Maximum segment length for curve approximation (mm) (0 = use nozzle diameter)", GH_ParamAccess.item, 0.0);
             pManager.AddNumberParameter("Smoothing Angle", "SA", "Maximum angle change (deg) below which successive segments are merged (0 = off)", GH_ParamAccess.item, 0.0);
+            pManager.AddIntegerParameter("Smoothing Samples", "SS", "Window size for running average smoothing (number of points) (0 = off)", GH_ParamAccess.item, 0);
             // Make bed and smoothing parameters optional
             pManager[6].Optional = true;
             pManager[7].Optional = true;
             pManager[8].Optional = true;
             pManager[9].Optional = true;
+            pManager[10].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager pManager)
@@ -51,6 +53,7 @@ namespace crft
             double bedDepth = 200.0;
             double maxSegmentLength = 0.0;
             double smoothingAngle = 0.0;
+            int smoothingSamples = 0;
             DA.GetData(0, ref layer);
             DA.GetData(1, ref offset);
             DA.GetData(2, ref shells);
@@ -61,6 +64,7 @@ namespace crft
             DA.GetData(7, ref bedDepth);
             DA.GetData(8, ref maxSegmentLength);
             DA.GetData(9, ref smoothingAngle);
+            DA.GetData(10, ref smoothingSamples);
             var settings = new SlicerSettings
             {
                 LayerHeight = layer,
@@ -72,7 +76,8 @@ namespace crft
                 BedWidth = bedWidth,
                 BedDepth = bedDepth,
                 MaxSegmentLength = maxSegmentLength,
-                SmoothingAngle = smoothingAngle
+                SmoothingAngle = smoothingAngle,
+                SmoothingSamples = smoothingSamples
             };
             DA.SetData(0, settings);
         }

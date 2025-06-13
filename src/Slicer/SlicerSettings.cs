@@ -26,9 +26,33 @@ namespace crft
         /// </summary>
         public double MaxSegmentLength { get; set; } = 0.0;
         /// <summary>
+        /// Window size for running average smoothing (number of points). 0 = off.
+        /// </summary>
+        public int SmoothingSamples { get; set; } = 0;
+        /// <summary>
         /// Smoothing angle threshold (degrees). Segments whose direction changes are below this
         /// threshold will be merged to reduce small-step moves. 0 = no smoothing.
         /// </summary>
         public double SmoothingAngle { get; set; } = 0.0;
+        /// <summary>
+        /// Enable arc interpolation (G2/G3 commands)
+        /// </summary>
+        public bool UseArcInterpolation { get; set; } = true;
+        /// <summary>
+        /// Tolerance for arc fitting (mm)
+        /// </summary>
+        public double ArcTolerance { get; set; } = 0.05;
+        /// <summary>
+        /// Minimum segment length - merge shorter segments (mm)
+        /// </summary>
+        public double MinSegmentLength { get; set; } = 0.1;
+        /// <summary>
+        /// Junction deviation for cornering (mm)
+        /// </summary>
+        public double JunctionDeviation { get; set; } = 0.02;
+        /// <summary>
+        /// Enable adaptive feed rates for corners
+        /// </summary>
+        public bool UseAdaptiveFeedRates { get; set; } = true;
     }
 }
