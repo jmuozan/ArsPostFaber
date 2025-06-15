@@ -211,7 +211,7 @@ button:hover { background:#0056b3; }
 </style>
 </head>
 <body>
-<canvas id='canvas' width='800' height='600'></canvas>
+<canvas id='canvas'></canvas>
 <div class='controls'>
 <button id='clearBtn'>Clear</button>
 <button id='submitBtn'>Submit</button>
@@ -224,6 +224,19 @@ const clearBtn = document.getElementById('clearBtn');
 const submitBtn = document.getElementById('submitBtn');
 let isDrawing=false, lastX=0, lastY=0, strokes=[], currentStroke=null;
 ctx.lineCap='round'; ctx.lineJoin='round'; ctx.lineWidth=3;
+function adjustCanvas() {
+    const margin = 40;
+    const maxWidth = window.innerWidth - margin;
+    const maxHeight = window.innerHeight - margin - 100;
+    const ratio = initialData.bedX / initialData.bedY;
+    let w = maxWidth;
+    let h = w / ratio;
+    if (h > maxHeight) { h = maxHeight; w = h * ratio; }
+    canvas.width = w;
+    canvas.height = h;
+}
+window.addEventListener('load', () => { adjustCanvas(); drawInitial(); });
+window.addEventListener('resize', () => { adjustCanvas(); drawInitial(); });
 function drawInitial(){ const w=canvas.width, h=canvas.height; ctx.strokeStyle='#888'; ctx.lineWidth=1; ctx.strokeRect(0,0,w,h); const s=initialData; ctx.strokeStyle='#000'; ctx.lineWidth=2; s.curves.forEach(curve=>{ ctx.beginPath(); curve.forEach((p,i)=>{ const x=p.x*w/s.bedX, y=h-p.y*h/s.bedY; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }); ctx.stroke(); });}
 function startDrawing(e){ isDrawing=true; const r=canvas.getBoundingClientRect(); const x=e.clientX-r.left, y=e.clientY-r.top; lastX=x; lastY=y; currentStroke={points:[{x,y}]}; strokes.push(currentStroke); ctx.beginPath(); ctx.moveTo(x,y); }
 function draw(e){ if(!isDrawing) return; const r=canvas.getBoundingClientRect(); const x=e.clientX-r.left, y=e.clientY-r.top; currentStroke.points.push({x,y}); ctx.lineTo(x,y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x,y); }
@@ -237,7 +250,7 @@ canvas.addEventListener('touchmove',e=>{ e.preventDefault(); const t=e.touches[0
 canvas.addEventListener('touchend',e=>{ e.preventDefault(); stopDrawing(); });
 clearBtn.addEventListener('click',()=>{ ctx.clearRect(0,0,canvas.width,canvas.height); drawInitial(); strokes=[]; });
 submitBtn.addEventListener('click',()=>{ fetch('/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({strokes,width:canvas.width,height:canvas.height})}).then(()=>{ document.body.innerHTML='<h2>Submitted</h2>'; }).catch(e=>alert('Error:'+e)); });
-drawInitial();
+    // Initial drawing handled on load event
 </script>
 </body>
 </html>";
