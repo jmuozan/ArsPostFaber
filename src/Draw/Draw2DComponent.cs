@@ -84,6 +84,8 @@ namespace crft
 
             // Output server URL
             DA.SetData(0, _serverStarted ? GetServerUrl() : string.Empty);
+            // Debug: show submission count
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Submissions: {_submissions.Count}");
             // Output strokes grouped per submission as a data tree
             {
                 var tree = new Grasshopper.DataTree<Curve>();
