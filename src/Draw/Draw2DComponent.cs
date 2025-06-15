@@ -19,15 +19,16 @@ namespace crft
     {
         private bool _startLast = false;
         private bool _serverStarted = false;
-        private bool _received = false;
         private int _port;
         private HttpListener _listener;
         private Task _serverTask;
-        private readonly List<StrokeRecordNormalized> _serverStrokes = new List<StrokeRecordNormalized>();
+        // store each submission (with its strokes & color)
+        // store normalized strokes per submission
+        private class SubmissionRecord { public List<List<PointDto>> strokes; public string color; }
+        private readonly List<SubmissionRecord> _submissions = new List<SubmissionRecord>();
         private List<Curve> _inputCurves;
         private double _bedX;
         private double _bedY;
-        private List<PolylineCurve> _newCurves;
 
         public Draw2DComponent()
           : base("Draw2D", "Draw2D", "Interactive 2D drawing component", "crft", "Draw")
@@ -45,7 +46,7 @@ namespace crft
         protected override void RegisterOutputParams(GH_OutputParamManager pManager)
         {
             pManager.AddTextParameter("Server URL", "URL", "URL for drawing connection", GH_ParamAccess.item);
-            pManager.AddCurveParameter("Output Curves", "C", "Input and drawn curves", GH_ParamAccess.list);
+            pManager.AddCurveParameter("Output Curves", "C", "Input and drawn curves per submission", GH_ParamAccess.tree);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -65,6 +66,8 @@ namespace crft
                 _inputCurves = curves.Select(c => (Curve)c.Duplicate()).ToList();
                 _bedX = bedX;
                 _bedY = bedY;
+                // clear any previous submissions
+                _submissions.Clear();
                 StartServer();
                 _startLast = true;
                 DA.SetData(0, GetServerUrl());
@@ -81,26 +84,23 @@ namespace crft
 
             // Output server URL
             DA.SetData(0, _serverStarted ? GetServerUrl() : string.Empty);
-            // Always output input curves + any strokes received from web
-            if (_serverStarted && _inputCurves != null)
+            // Output strokes grouped per submission as a data tree
             {
-                var outCurves = new List<Curve>();
-                // input curves
-                outCurves.AddRange(_inputCurves.Select(c => (Curve)c.Duplicate()));
-                // strokes from clients
-                foreach (var rec in _serverStrokes)
+                var tree = new Grasshopper.DataTree<Curve>();
+                for (int i = 0; i < _submissions.Count; i++)
                 {
-                    var pts = new List<Point3d>();
-                    foreach (var p in rec.points)
+                    var sub = _submissions[i];
+                    var path = new Grasshopper.Kernel.Data.GH_Path(i);
+                    foreach (var stroke in sub.strokes)
                     {
-                        var x = p.x * _bedX;
-                        var y = p.y * _bedY;
-                        pts.Add(new Point3d(x, y, 0));
+                        if (stroke.Count < 2) continue;
+                        var pts = stroke.Select(p => new Point3d(p.x * _bedX, p.y * _bedY, 0)).ToList();
+                        var poly = new PolylineCurve(pts);
+                        if (poly.IsValid)
+                            tree.Add(poly, path);
                     }
-                    if (pts.Count > 1)
-                        outCurves.Add(new PolylineCurve(pts));
                 }
-                DA.SetDataList(1, outCurves);
+                DA.SetDataTree(1, tree);
             }
         }
 
@@ -138,8 +138,8 @@ namespace crft
                 return;
             }
 
-                // initialize server strokes and start HTML server
-                _serverStrokes.Clear();
+                // clear previous submissions
+                _submissions.Clear();
 
             _serverTask = Task.Run(() =>
             {
@@ -156,7 +156,8 @@ namespace crft
                             using var reader = new StreamReader(req.InputStream);
                             var json = reader.ReadToEnd();
                             var data = JsonConvert.DeserializeObject<UploadData>(json);
-                            // Normalize and store strokes
+                            // Normalize into submission record
+                            var submission = new SubmissionRecord { strokes = new List<List<PointDto>>(), color = data.color };
                             foreach (var stroke in data.strokes)
                             {
                                 var normPts = new List<PointDto>();
@@ -166,17 +167,25 @@ namespace crft
                                     double ny = (data.height - pt.y) / data.height;
                                     normPts.Add(new PointDto { x = nx, y = ny });
                                 }
-                                _serverStrokes.Add(new StrokeRecordNormalized { points = normPts, color = data.color });
+                                if (normPts.Count > 1)
+                                    submission.strokes.Add(normPts);
                             }
+                            _submissions.Add(submission);
                             resp.StatusCode = 200;
                             resp.Close();
-                            // Trigger Grasshopper to recompute and display new strokes
                             Application.Instance.Invoke(() => ExpireSolution(true));
                         }
                         // Serve strokes JSON for polling
                         else if (req.HttpMethod == "GET" && req.Url.AbsolutePath == "/strokes")
                         {
-                            var respData = JsonConvert.SerializeObject(new { strokes = _serverStrokes });
+                            // Flatten submissions into strokes array
+                            var flat = new List<object>();
+                            foreach (var sub in _submissions)
+                            {
+                                foreach (var stroke in sub.strokes)
+                                    flat.Add(new { points = stroke, color = sub.color });
+                            }
+                            var respData = JsonConvert.SerializeObject(new { strokes = flat });
                             var buf = Encoding.UTF8.GetBytes(respData);
                             resp.ContentType = "application/json";
                             resp.ContentEncoding = Encoding.UTF8;
@@ -209,9 +218,10 @@ namespace crft
 
         private void Reset()
         {
-            _received = false;
+            // clear stored submissions and input curves
+            _submissions.Clear();
             _inputCurves = null;
-            _newCurves = null;
+            _serverStarted = false;
         }
 
         private string BuildHtml()
@@ -436,6 +446,5 @@ namespace crft
         private class PointDto { public double x; public double y; }
         private class Stroke { public List<PointDto> points; }
         private class UploadData { public List<Stroke> strokes; public double width; public double height; public string color; }
-        private class StrokeRecordNormalized { public List<PointDto> points; public string color; }
     }
 }
