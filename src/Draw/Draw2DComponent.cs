@@ -216,70 +216,168 @@ namespace crft
 
         private string BuildHtml()
         {
+            // Serialize initial curves
             var initCurves = new List<List<PointDto>>();
             foreach (var c in _inputCurves)
             {
                 c.DivideByCount(50, true, out var pts);
                 initCurves.Add(pts.Select(p => new PointDto { x = p.X, y = p.Y }).ToList());
             }
-            var initData = new { bedX = _bedX, bedY = _bedY, curves = initCurves };
+            // Assign each user a distinct color
+            var rand = new Random();
+            var clientColor = "#" + rand.Next(0x1000000).ToString("X6");
+            var initData = new { bedX = _bedX, bedY = _bedY, curves = initCurves, clientColor };
             var json = JsonConvert.SerializeObject(initData);
+            // HTML + JS template
             var template = @"<!DOCTYPE html>
 <html lang='en'>
 <head>
-<meta charset='UTF-8'>
-<meta name='viewport' content='width=device-width, initial-scale=1.0'>
-<title>Draw2D Canvas</title>
-<style>
-body { margin:0; padding:20px; background:#f0f0f0; font-family:Arial; display:flex; flex-direction:column; align-items:center; }
-#canvas { border:2px solid #333; background:white; border-radius:8px; cursor:crosshair; }
-.controls { margin-top:20px; display:flex; gap:15px; align-items:center; }
-button { padding:8px 16px; background:#007bff; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold; }
-button:hover { background:#0056b3; }
-</style>
+  <meta charset='UTF-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+  <title>Draw2D Canvas</title>
+  <style>
+    html, body { margin:0; padding:0; font-family:Arial,sans-serif; }
+    body { display:flex; flex-direction:column; align-items:center; padding:20px; background:#f0f0f0; }
+    #canvas { border:2px solid #333; background:#fff; border-radius:8px; touch-action:none; }
+    .controls { margin-top:10px; display:flex; gap:10px; }
+    button { padding:8px 16px; background:#007bff; color:#fff; border:none; border-radius:4px; cursor:pointer; }
+    button:hover { background:#0056b3; }
+  </style>
 </head>
 <body>
-<canvas id='canvas'></canvas>
-<div class='controls'>
-<button id='clearBtn'>Clear</button>
-<button id='submitBtn'>Submit</button>
-</div>
-<script>
-const initialData = %%DATA%%;
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const clearBtn = document.getElementById('clearBtn');
-const submitBtn = document.getElementById('submitBtn');
-let isDrawing=false, lastX=0, lastY=0, strokes=[], currentStroke=null;
-ctx.lineCap='round'; ctx.lineJoin='round'; ctx.lineWidth=3;
-function adjustCanvas() {
-    const margin = 40;
-    const maxWidth = window.innerWidth - margin;
-    const maxHeight = window.innerHeight - margin - 100;
-    const ratio = initialData.bedX / initialData.bedY;
-    let w = maxWidth;
-    let h = w / ratio;
-    if (h > maxHeight) { h = maxHeight; w = h * ratio; }
-    canvas.width = w;
-    canvas.height = h;
-}
-window.addEventListener('load', () => { adjustCanvas(); drawInitial(); });
-window.addEventListener('resize', () => { adjustCanvas(); drawInitial(); });
-function drawInitial(){ const w=canvas.width, h=canvas.height; ctx.strokeStyle='#888'; ctx.lineWidth=1; ctx.strokeRect(0,0,w,h); const s=initialData; ctx.strokeStyle='#000'; ctx.lineWidth=2; s.curves.forEach(curve=>{ ctx.beginPath(); curve.forEach((p,i)=>{ const x=p.x*w/s.bedX, y=h-p.y*h/s.bedY; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }); ctx.stroke(); });}
-function startDrawing(e){ isDrawing=true; const r=canvas.getBoundingClientRect(); const x=e.clientX-r.left, y=e.clientY-r.top; lastX=x; lastY=y; currentStroke={points:[{x,y}]}; strokes.push(currentStroke); ctx.beginPath(); ctx.moveTo(x,y); }
-function draw(e){ if(!isDrawing) return; const r=canvas.getBoundingClientRect(); const x=e.clientX-r.left, y=e.clientY-r.top; currentStroke.points.push({x,y}); ctx.lineTo(x,y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x,y); }
-function stopDrawing(){ if(!isDrawing) return; isDrawing=false; ctx.beginPath(); }
-canvas.addEventListener('mousedown',startDrawing);
-canvas.addEventListener('mousemove',draw);
-canvas.addEventListener('mouseup',stopDrawing);
-canvas.addEventListener('mouseout',stopDrawing);
-canvas.addEventListener('touchstart',e=>{ e.preventDefault(); const t=e.touches[0]; startDrawing(new MouseEvent('mousedown',{clientX:t.clientX,clientY:t.clientY})); });
-canvas.addEventListener('touchmove',e=>{ e.preventDefault(); const t=e.touches[0]; draw(new MouseEvent('mousemove',{clientX:t.clientX,clientY:t.clientY})); });
-canvas.addEventListener('touchend',e=>{ e.preventDefault(); stopDrawing(); });
-clearBtn.addEventListener('click',()=>{ ctx.clearRect(0,0,canvas.width,canvas.height); drawInitial(); strokes=[]; });
-submitBtn.addEventListener('click',()=>{ fetch('/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({strokes,width:canvas.width,height:canvas.height})}).then(()=>{ document.body.innerHTML='<h2>Submitted</h2>'; }).catch(e=>alert('Error:'+e)); });
-    // Initial drawing handled on load event
-</script>
+  <canvas id='canvas'></canvas>
+  <div class='controls'>
+    <button id='clearBtn'>Clear</button>
+    <button id='submitBtn'>Submit</button>
+  </div>
+  <script>
+    const initData = %%DATA%%;
+    let existingStrokes = [];
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const clearBtn = document.getElementById('clearBtn');
+    const submitBtn = document.getElementById('submitBtn');
+    const clientColor = initData.clientColor;
+    let isDrawing = false, strokes = [], currentStroke = null;
+
+    function adjustCanvas() {
+      const margin = 40;
+      const maxW = window.innerWidth - margin;
+      const maxH = window.innerHeight - margin - 80;
+      const ratio = initData.bedX / initData.bedY;
+      let w = maxW, h = w / ratio;
+      if (h > maxH) { h = maxH; w = h * ratio; }
+      canvas.width = w; canvas.height = h;
+    }
+
+    function drawBase() {
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0,0,w,h);
+      ctx.strokeStyle = '#888'; ctx.lineWidth = 1;
+      ctx.strokeRect(0,0,w,h);
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+      initData.curves.forEach(curve => {
+        ctx.beginPath();
+        curve.forEach((p,i) => {
+          const x = p.x * w / initData.bedX;
+          const y = h - (p.y * h / initData.bedY);
+          i===0? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+        });
+        ctx.stroke();
+      });
+    }
+
+    function drawExisting() {
+      existingStrokes.forEach(st => {
+        ctx.strokeStyle = st.color; ctx.lineWidth = 2;
+        ctx.beginPath();
+        st.points.forEach((p,i) => {
+          const x = p.x * canvas.width;
+          const y = (1 - p.y) * canvas.height;
+          i===0? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+        });
+        ctx.stroke();
+      });
+    }
+
+    function drawLocal() {
+      ctx.strokeStyle = clientColor; ctx.lineWidth = 3;
+      strokes.forEach(st => {
+        ctx.beginPath();
+        st.points.forEach((pt,i) => {
+          i===0? ctx.moveTo(pt.x,pt.y) : ctx.lineTo(pt.x,pt.y);
+        });
+        ctx.stroke();
+      });
+    }
+
+    function drawAll() { drawBase(); drawExisting(); drawLocal(); }
+
+    canvas.addEventListener('mousedown', e => {
+      isDrawing = true;
+      const r = canvas.getBoundingClientRect();
+      const x = e.clientX - r.left, y = e.clientY - r.top;
+      currentStroke = { points:[{x,y}] };
+      strokes.push(currentStroke);
+    });
+    canvas.addEventListener('mousemove', e => {
+      if (!isDrawing) return;
+      const r = canvas.getBoundingClientRect();
+      const x = e.clientX - r.left, y = e.clientY - r.top;
+      currentStroke.points.push({x,y});
+      ctx.strokeStyle = clientColor;
+      ctx.beginPath();
+      const prev = currentStroke.points[currentStroke.points.length-2];
+      ctx.moveTo(prev.x,prev.y);
+      ctx.lineTo(x,y);
+      ctx.stroke();
+    });
+    ['mouseup','mouseout'].forEach(ev => canvas.addEventListener(ev,()=>isDrawing=false));
+    // Touch events for mobile drawing
+    canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      const t = e.touches[0];
+      const r = canvas.getBoundingClientRect();
+      const x = t.clientX - r.left, y = t.clientY - r.top;
+      isDrawing = true;
+      currentStroke = { points:[{x,y}] };
+      strokes.push(currentStroke);
+    });
+    canvas.addEventListener('touchmove', e => {
+      e.preventDefault();
+      if (!isDrawing) return;
+      const t = e.touches[0];
+      const r = canvas.getBoundingClientRect();
+      const x = t.clientX - r.left, y = t.clientY - r.top;
+      currentStroke.points.push({x,y});
+      ctx.strokeStyle = clientColor;
+      ctx.beginPath();
+      const prev = currentStroke.points[currentStroke.points.length-2];
+      ctx.moveTo(prev.x,prev.y);
+      ctx.lineTo(x,y);
+      ctx.stroke();
+    });
+    canvas.addEventListener('touchend', e => {
+      e.preventDefault();
+      isDrawing = false;
+    });
+
+    clearBtn.addEventListener('click', ()=>{ strokes=[]; drawAll(); });
+    submitBtn.addEventListener('click', ()=>{
+      fetch('/upload',{
+        method: 'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ strokes, width:canvas.width, height:canvas.height, color: clientColor })
+      }).catch(e => alert('Submit error: ' + e));
+      // clear local strokes but keep the canvas active
+      strokes = [];
+    });
+
+    function pollStrokes() {
+      fetch('/strokes').then(r=>r.json()).then(d=>{ existingStrokes = d.strokes; drawAll(); });
+    }
+    window.addEventListener('load', ()=>{ adjustCanvas(); pollStrokes(); setInterval(pollStrokes,2000); });
+    window.addEventListener('resize', ()=>{ adjustCanvas(); drawAll(); });
+  </script>
 </body>
 </html>";
             return template.Replace("%%DATA%%", json);
