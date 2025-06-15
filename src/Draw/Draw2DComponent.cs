@@ -23,7 +23,7 @@ namespace crft
         private int _port;
         private HttpListener _listener;
         private Task _serverTask;
-        private string _html;
+        private readonly List<StrokeRecordNormalized> _serverStrokes = new List<StrokeRecordNormalized>();
         private List<Curve> _inputCurves;
         private double _bedX;
         private double _bedY;
@@ -79,15 +79,28 @@ namespace crft
             }
             _startLast = start;
 
+            // Output server URL
             DA.SetData(0, _serverStarted ? GetServerUrl() : string.Empty);
-
-            if (_received)
+            // Always output input curves + any strokes received from web
+            if (_serverStarted && _inputCurves != null)
             {
-                var allCurves = new List<Curve>();
-                allCurves.AddRange(_inputCurves);
-                allCurves.AddRange(_newCurves);
-                DA.SetDataList(1, allCurves);
-                _received = false;
+                var outCurves = new List<Curve>();
+                // input curves
+                outCurves.AddRange(_inputCurves.Select(c => (Curve)c.Duplicate()));
+                // strokes from clients
+                foreach (var rec in _serverStrokes)
+                {
+                    var pts = new List<Point3d>();
+                    foreach (var p in rec.points)
+                    {
+                        var x = p.x * _bedX;
+                        var y = p.y * _bedY;
+                        pts.Add(new Point3d(x, y, 0));
+                    }
+                    if (pts.Count > 1)
+                        outCurves.Add(new PolylineCurve(pts));
+                }
+                DA.SetDataList(1, outCurves);
             }
         }
 
@@ -110,14 +123,14 @@ namespace crft
             _listener.Prefixes.Add($"http://{ip}:{_port}/");
             try
             {
-                _listener.Start();
-                _serverStarted = true;
-                var url = GetServerUrl();
-                Application.Instance.Invoke(() =>
-                {
-                    ShowQrCode(url);
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Draw2D server listening at {url}");
-                });
+            _listener.Start();
+            _serverStarted = true;
+            var url = GetServerUrl();
+            Application.Instance.Invoke(() =>
+            {
+                ShowQrCode(url);
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"Draw2D server listening at {url}");
+            });
             }
             catch (Exception ex)
             {
@@ -125,7 +138,8 @@ namespace crft
                 return;
             }
 
-            _html = BuildHtml();
+                // initialize server strokes and start HTML server
+                _serverStrokes.Clear();
 
             _serverTask = Task.Run(() =>
             {
@@ -136,31 +150,45 @@ namespace crft
                         var ctx = _listener.GetContext();
                         var req = ctx.Request;
                         var resp = ctx.Response;
+                        // Handle stroke upload
                         if (req.HttpMethod == "POST" && req.Url.AbsolutePath == "/upload")
                         {
                             using var reader = new StreamReader(req.InputStream);
                             var json = reader.ReadToEnd();
                             var data = JsonConvert.DeserializeObject<UploadData>(json);
-                            _newCurves = new List<PolylineCurve>();
+                            // Normalize and store strokes
                             foreach (var stroke in data.strokes)
                             {
-                                var ptsList = new List<Point3d>();
+                                var normPts = new List<PointDto>();
                                 foreach (var pt in stroke.points)
                                 {
-                                    double x = pt.x * _bedX / data.width;
-                                    double y = (data.height - pt.y) * _bedY / data.height;
-                                    ptsList.Add(new Point3d(x, y, 0));
+                                    double nx = pt.x / data.width;
+                                    double ny = (data.height - pt.y) / data.height;
+                                    normPts.Add(new PointDto { x = nx, y = ny });
                                 }
-                                _newCurves.Add(new PolylineCurve(new Polyline(ptsList)));
+                                _serverStrokes.Add(new StrokeRecordNormalized { points = normPts, color = data.color });
                             }
                             resp.StatusCode = 200;
                             resp.Close();
-                            _received = true;
+                            // Trigger Grasshopper to recompute and display new strokes
                             Application.Instance.Invoke(() => ExpireSolution(true));
                         }
+                        // Serve strokes JSON for polling
+                        else if (req.HttpMethod == "GET" && req.Url.AbsolutePath == "/strokes")
+                        {
+                            var respData = JsonConvert.SerializeObject(new { strokes = _serverStrokes });
+                            var buf = Encoding.UTF8.GetBytes(respData);
+                            resp.ContentType = "application/json";
+                            resp.ContentEncoding = Encoding.UTF8;
+                            resp.ContentLength64 = buf.Length;
+                            resp.OutputStream.Write(buf, 0, buf.Length);
+                            resp.OutputStream.Close();
+                        }
+                        // Serve dynamic HTML page
                         else
                         {
-                            var buf = Encoding.UTF8.GetBytes(_html);
+                            var html = BuildHtml();
+                            var buf = Encoding.UTF8.GetBytes(html);
                             resp.ContentType = "text/html";
                             resp.ContentEncoding = Encoding.UTF8;
                             resp.ContentLength64 = buf.Length;
@@ -309,6 +337,7 @@ submitBtn.addEventListener('click',()=>{ fetch('/upload',{method:'POST',headers:
 
         private class PointDto { public double x; public double y; }
         private class Stroke { public List<PointDto> points; }
-        private class UploadData { public List<Stroke> strokes; public double width; public double height; }
+        private class UploadData { public List<Stroke> strokes; public double width; public double height; public string color; }
+        private class StrokeRecordNormalized { public List<PointDto> points; public string color; }
     }
 }
