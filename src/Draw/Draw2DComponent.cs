@@ -89,6 +89,7 @@ namespace crft
             // Output strokes grouped per submission as a data tree
             {
                 var tree = new Grasshopper.DataTree<Curve>();
+                double tol = Math.Min(_bedX, _bedY) * 1e-6;
                 for (int i = 0; i < _submissions.Count; i++)
                 {
                     var sub = _submissions[i];
@@ -96,8 +97,21 @@ namespace crft
                     foreach (var stroke in sub.strokes)
                     {
                         if (stroke.Count < 2) continue;
-                        var pts = stroke.Select(p => new Point3d(p.x * _bedX, p.y * _bedY, 0)).ToList();
-                        var poly = new PolylineCurve(pts);
+                        // build and clean point list
+                        var rawPts = stroke.Select(p => new Point3d(p.x * _bedX, p.y * _bedY, 0)).ToList();
+                        var cleanPts = new List<Point3d>();
+                        Point3d lastPt = rawPts[0];
+                        cleanPts.Add(lastPt);
+                        foreach (var pt in rawPts.Skip(1))
+                        {
+                            if (pt.DistanceTo(lastPt) > tol)
+                            {
+                                cleanPts.Add(pt);
+                                lastPt = pt;
+                            }
+                        }
+                        if (cleanPts.Count < 2) continue;
+                        var poly = new PolylineCurve(cleanPts);
                         if (poly.IsValid)
                             tree.Add(poly, path);
                     }
