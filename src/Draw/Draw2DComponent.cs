@@ -7,181 +7,107 @@ using System.Text;
 using System.Threading.Tasks;
 using Eto.Forms;
 using Grasshopper.Kernel;
-using Grasshopper.Kernel.Data;
-using Grasshopper.Kernel.Types;
-using System.Linq;
 using Rhino.Geometry;
-using Newtonsoft.Json.Linq;
+using System.Linq;
 using QRCoder;
 using Eto.Drawing;
+using Newtonsoft.Json;
 
 namespace crft
 {
-    /// <summary>
-    /// Component that hosts a web canvas for drawing 2D curves and imports them into Grasshopper.
-    /// </summary>
     public class Draw2DComponent : GH_Component
     {
         private bool _startLast = false;
         private bool _serverStarted = false;
-        private bool _dataReceived = false;
+        private bool _received = false;
         private int _port;
         private HttpListener _listener;
         private Task _serverTask;
-        private Dictionary<string, List<List<Point3d>>> _strokesByClient = new Dictionary<string, List<List<Point3d>>>();
-        private Dictionary<string, string> _clientColors = new Dictionary<string, string>();
+        private string _html;
         private List<Curve> _inputCurves;
-        private double _originX, _originY, _canvasWorldWidth, _canvasWorldHeight;
+        private double _bedX;
+        private double _bedY;
+        private List<PolylineCurve> _newCurves;
 
         public Draw2DComponent()
-          : base("Draw 2D", "Draw2D",
-              "Hosts a web-based 2D drawing canvas and outputs drawn curves.",
-              "crft", "Draw")
+          : base("Draw2D", "Draw2D", "Interactive 2D drawing component", "crft", "Draw")
         {
         }
 
         protected override void RegisterInputParams(GH_InputParamManager pManager)
         {
-            pManager.AddBooleanParameter("Start", "S", "Activate web drawing session", GH_ParamAccess.item, false);
-            pManager.AddCurveParameter("Input Curves", "C", "Optional curves to preload on canvas", GH_ParamAccess.list);
-            pManager[1].Optional = true;
-            pManager.AddNumberParameter("Bed X", "BX", "Bed width in X direction (world units), overrides input curves mapping", GH_ParamAccess.item, 0.0);
-            pManager.AddNumberParameter("Bed Y", "BY", "Bed depth in Y direction (world units), overrides input curves mapping", GH_ParamAccess.item, 0.0);
-            pManager[2].Optional = true;
-            pManager[3].Optional = true;
+            pManager.AddBooleanParameter("Start", "S", "Activate drawing session", GH_ParamAccess.item, false);
+            pManager.AddCurveParameter("Input Curves", "C", "Curves to display", GH_ParamAccess.list);
+            pManager.AddNumberParameter("Bed Size X", "X", "Bed size X dimension", GH_ParamAccess.item, 100.0);
+            pManager.AddNumberParameter("Bed Size Y", "Y", "Bed size Y dimension", GH_ParamAccess.item, 100.0);
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager pManager)
         {
-            pManager.AddTextParameter("URL", "URL", "URL to open the drawing canvas", GH_ParamAccess.item);
-            pManager.AddCurveParameter("Curves", "C", "Drawn curves as 2D polylines", GH_ParamAccess.list);
+            pManager.AddTextParameter("Server URL", "URL", "URL for drawing connection", GH_ParamAccess.item);
+            pManager.AddCurveParameter("Output Curves", "C", "Input and drawn curves", GH_ParamAccess.list);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             bool start = false;
             DA.GetData(0, ref start);
-            var inputCurves = new List<Curve>();
-            DA.GetDataList(1, inputCurves);
+
+            var rawCurves = new List<GeometryBase>();
+            DA.GetDataList(1, rawCurves);
+            var curves = rawCurves.OfType<Curve>().ToList();
             double bedX = 0, bedY = 0;
             DA.GetData(2, ref bedX);
             DA.GetData(3, ref bedY);
 
-            // Start session on rising edge
             if (start && !_startLast)
             {
-                // determine mapping via bed size or input curves
-                if (bedX > 0 && bedY > 0)
-                {
-                    // Use bed dimensions for canvas mapping; keep input curves for preload
-                    _inputCurves = inputCurves;
-                    _originX = 0; _originY = 0;
-                    _canvasWorldWidth = bedX; _canvasWorldHeight = bedY;
-                }
-                else if (inputCurves.Count > 0)
-                {
-                    _inputCurves = inputCurves;
-                    bool first = true;
-                    BoundingBox bbox = default;
-                    foreach (var c in _inputCurves)
-                    {
-                        var bb = c.GetBoundingBox(true);
-                        if (first) { bbox = bb; first = false; }
-                        else bbox.Union(bb);
-                    }
-                    _originX = bbox.Min.X; _originY = bbox.Min.Y;
-                    _canvasWorldWidth = bbox.Max.X - bbox.Min.X; if (_canvasWorldWidth <= 0) _canvasWorldWidth = 1;
-                    _canvasWorldHeight = bbox.Max.Y - bbox.Min.Y; if (_canvasWorldHeight <= 0) _canvasWorldHeight = 1;
-                }
-                else
-                {
-                    _inputCurves = null;
-                    _originX = 0; _originY = 0;
-                    _canvasWorldWidth = 1; _canvasWorldHeight = 1;
-                }
+                _inputCurves = curves.Select(c => (Curve)c.Duplicate()).ToList();
+                _bedX = bedX;
+                _bedY = bedY;
                 StartServer();
                 _startLast = true;
                 DA.SetData(0, GetServerUrl());
-                // output bed border and input curves immediately
-                var initCurves = new List<Curve>();
-                if (_canvasWorldWidth > 0 && _canvasWorldHeight > 0)
-                {
-                    var pts = new List<Point3d>
-                    {
-                        new Point3d(_originX, _originY, 0),
-                        new Point3d(_originX + _canvasWorldWidth, _originY, 0),
-                        new Point3d(_originX + _canvasWorldWidth, _originY + _canvasWorldHeight, 0),
-                        new Point3d(_originX, _originY + _canvasWorldHeight, 0),
-                        new Point3d(_originX, _originY, 0)
-                    };
-                    initCurves.Add(new PolylineCurve(pts));
-                }
-                if (_inputCurves != null)
-                    initCurves.AddRange(_inputCurves);
-                DA.SetDataList(1, initCurves);
                 return;
             }
-            // Stop session on falling edge
             if (!start && _startLast)
             {
                 StopServer();
-                ResetFlags();
+                Reset();
                 _startLast = false;
                 return;
             }
             _startLast = start;
 
-            // Output server URL
             DA.SetData(0, _serverStarted ? GetServerUrl() : string.Empty);
-            // Build output data tree with branches: 0=bed, 1=input, 2+ users
-            var tree = new GH_Structure<GH_Curve>();
-            // Branch 0: bed boundary
-            if (_canvasWorldWidth > 0 && _canvasWorldHeight > 0)
+
+            if (_received)
             {
-                var pts = new List<Point3d>
-                {
-                    new Point3d(_originX, _originY, 0),
-                    new Point3d(_originX + _canvasWorldWidth, _originY, 0),
-                    new Point3d(_originX + _canvasWorldWidth, _originY + _canvasWorldHeight, 0),
-                    new Point3d(_originX, _originY + _canvasWorldHeight, 0),
-                    new Point3d(_originX, _originY, 0)
-                };
-                var border = new PolylineCurve(pts);
-                tree.Append(new GH_Curve(border), new GH_Path(0));
+                var allCurves = new List<Curve>();
+                allCurves.AddRange(_inputCurves);
+                allCurves.AddRange(_newCurves);
+                DA.SetDataList(1, allCurves);
+                _received = false;
             }
-            // Branch 1: input curves
-            if (_inputCurves != null)
-                tree.AppendRange(_inputCurves.Select(c => new GH_Curve(c)), new GH_Path(1));
-            // Branches 2+: user strokes
-            int userIndex = 2;
-            lock (_strokesByClient)
-            {
-                foreach (var kv in _strokesByClient)
-                {
-                    var userCurves = new List<Curve>();
-                    foreach (var stroke in kv.Value)
-                        if (stroke.Count > 1)
-                            userCurves.Add(new PolylineCurve(stroke));
-                    tree.AppendRange(userCurves.Select(c => new GH_Curve(c)), new GH_Path(userIndex));
-                    userIndex++;
-                }
-            }
-            DA.SetDataTree(1, tree);
         }
 
         protected override System.Drawing.Bitmap Icon => null;
 
-        public override Guid ComponentGuid => new Guid("D1E2F3A4-5678-90AB-CDEF-1234567890AB");
+        public override Guid ComponentGuid => new Guid("BDEF6789-ABCD-4EFA-B123-4567890ABCDE");
+
+        private string GetServerUrl()
+        {
+            var ip = GetLocalIPAddress();
+            return $"http://{ip}:{_port}/";
+        }
 
         private void StartServer()
         {
             _port = GetFreePort();
             _listener = new HttpListener();
             _listener.Prefixes.Add($"http://*:{_port}/");
-            _listener.Prefixes.Add($"http://{GetLocalIPAddress()}:{_port}/");
-            // reset per-session strokes and colors
-            _strokesByClient = new Dictionary<string, List<List<Point3d>>>();
-            _clientColors = new Dictionary<string, string>();
+            var ip = GetLocalIPAddress();
+            _listener.Prefixes.Add($"http://{ip}:{_port}/");
             try
             {
                 _listener.Start();
@@ -195,327 +121,127 @@ namespace crft
             }
             catch (Exception ex)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Failed to start Draw2D server: {ex.Message}");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Failed to start server: {ex.Message}");
                 return;
             }
-            _serverTask = Task.Run(async () =>
+
+            _html = BuildHtml();
+
+            _serverTask = Task.Run(() =>
             {
                 while (_listener.IsListening)
                 {
-                    HttpListenerContext ctx;
-                    try { ctx = await _listener.GetContextAsync(); }
+                    try
+                    {
+                        var ctx = _listener.GetContext();
+                        var req = ctx.Request;
+                        var resp = ctx.Response;
+                        if (req.HttpMethod == "POST" && req.Url.AbsolutePath == "/upload")
+                        {
+                            using var reader = new StreamReader(req.InputStream);
+                            var json = reader.ReadToEnd();
+                            var data = JsonConvert.DeserializeObject<UploadData>(json);
+                            _newCurves = new List<PolylineCurve>();
+                            foreach (var stroke in data.strokes)
+                            {
+                                var ptsList = new List<Point3d>();
+                                foreach (var pt in stroke.points)
+                                {
+                                    double x = pt.x * _bedX / data.width;
+                                    double y = (data.height - pt.y) * _bedY / data.height;
+                                    ptsList.Add(new Point3d(x, y, 0));
+                                }
+                                _newCurves.Add(new PolylineCurve(new Polyline(ptsList)));
+                            }
+                            resp.StatusCode = 200;
+                            resp.Close();
+                            _received = true;
+                            Application.Instance.Invoke(() => ExpireSolution(true));
+                        }
+                        else
+                        {
+                            var buf = Encoding.UTF8.GetBytes(_html);
+                            resp.ContentType = "text/html";
+                            resp.ContentEncoding = Encoding.UTF8;
+                            resp.ContentLength64 = buf.Length;
+                            resp.OutputStream.Write(buf, 0, buf.Length);
+                            resp.OutputStream.Close();
+                        }
+                    }
                     catch { break; }
-                    var req = ctx.Request;
-                    var resp = ctx.Response;
-                    if (req.Url.AbsolutePath == "/upload" && req.HttpMethod == "POST")
-                    {
-                        // Multi-user stroke upload
-                        var clientId = req.QueryString["client"] ?? "_default";
-                        var colorParam = req.QueryString["color"];
-                        if (!string.IsNullOrEmpty(colorParam))
-                            lock (_clientColors)
-                                _clientColors[clientId] = colorParam;
-                        string json;
-                        using (var reader = new StreamReader(req.InputStream, req.ContentEncoding))
-                            json = await reader.ReadToEndAsync();
-                        try
-                        {
-                            var arr = JArray.Parse(json);
-                            var list = new List<List<Point3d>>();
-                            foreach (JArray stroke in arr)
-                            {
-                                var pts = new List<Point3d>();
-                                foreach (var p in stroke)
-                                {
-                                    double x = (double)p["x"];
-                                    double y = (double)p["y"];
-                                    pts.Add(new Point3d(x + _originX, y + _originY, 0));
-                                }
-                                list.Add(pts);
-                            }
-                            lock (_strokesByClient)
-                                _strokesByClient[clientId] = list;
-                        }
-                        catch { }
-                        resp.StatusCode = 200;
-                        resp.OutputStream.Close();
-                        Application.Instance.Invoke(() => ExpireSolution(true));
-                    }
-                    else if (req.Url.AbsolutePath == "/data" && req.HttpMethod == "GET")
-                    {
-                        // Return all clients' strokes as JSON object
-                        var root = new JObject();
-                        lock (_strokesByClient)
-                        {
-                            foreach (var kv in _strokesByClient)
-                            {
-                                var jarr = new JArray();
-                                foreach (var stroke in kv.Value)
-                                {
-                                    var parr = new JArray();
-                                    foreach (var pt in stroke)
-                                        parr.Add(new JObject(new JProperty("x", pt.X - _originX), new JProperty("y", pt.Y - _originY)));
-                                    jarr.Add(parr);
-                                }
-                                // Include client color
-                                var color = _clientColors.ContainsKey(kv.Key) ? _clientColors[kv.Key] : "#000000";
-                                root[kv.Key] = new JObject(
-                                    new JProperty("color", color),
-                                    new JProperty("strokes", jarr)
-                                );
-                            }
-                        }
-                        var outBuf = Encoding.UTF8.GetBytes(root.ToString());
-                        resp.ContentType = "application/json";
-                        resp.ContentLength64 = outBuf.Length;
-                        resp.OutputStream.Write(outBuf, 0, outBuf.Length);
-                        resp.OutputStream.Close();
-                    }
-                    else
-                    {
-                        var html = GenerateHtml();
-                        var buf = Encoding.UTF8.GetBytes(html);
-                        resp.ContentType = "text/html";
-                        resp.ContentEncoding = Encoding.UTF8;
-                        resp.ContentLength64 = buf.Length;
-                        resp.OutputStream.Write(buf, 0, buf.Length);
-                        resp.OutputStream.Close();
-                    }
                 }
             });
         }
 
         private void StopServer()
         {
-            try { if (_listener?.IsListening == true) _listener.Stop(); }
-            catch { }
+            try { if (_listener?.IsListening == true) _listener.Stop(); } catch { }
             _serverStarted = false;
         }
 
-        private void ResetFlags()
+        private void Reset()
         {
-            // clear state
+            _received = false;
             _inputCurves = null;
-            _originX = _originY = _canvasWorldWidth = _canvasWorldHeight = 0;
-            _strokesByClient.Clear();
-            _port = 0;
+            _newCurves = null;
         }
 
-        // ParseJsonStrokes removed; multi-user handled via /upload and /data endpoints
-
-        private string GenerateHtml()
+        private string BuildHtml()
         {
-            // Build preload strokes in world coords relative to origin
-            var preloadArr = new JArray();
-            if (_inputCurves != null)
+            var initCurves = new List<List<PointDto>>();
+            foreach (var c in _inputCurves)
             {
-                foreach (var c in _inputCurves)
-                {
-                    var nurbs = c.ToNurbsCurve();
-                    var domain = nurbs.Domain;
-                        int segments = 200;
-                    var ptsArr = new JArray();
-                    for (int i = 0; i <= segments; i++)
-                    {
-                        double t = domain.T0 + (domain.T1 - domain.T0) * i / segments;
-                        var p = nurbs.PointAt(t);
-                        ptsArr.Add(new JObject(
-                            new JProperty("x", p.X - _originX),
-                            new JProperty("y", p.Y - _originY)));
-                    }
-                    preloadArr.Add(ptsArr);
-                }
+                c.DivideByCount(50, true, out var pts);
+                initCurves.Add(pts.Select(p => new PointDto { x = p.X, y = p.Y }).ToList());
             }
-            var preloadJson = preloadArr.ToString(Newtonsoft.Json.Formatting.None);
-            return @"<!DOCTYPE html>  
-<html>
+            var initData = new { bedX = _bedX, bedY = _bedY, curves = initCurves };
+            var json = JsonConvert.SerializeObject(initData);
+            var template = @"<!DOCTYPE html>
+<html lang='en'>
 <head>
-  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-  <title>Draw 2D</title>
-    <style>
-    body {{ margin:0; overflow:hidden; display:flex; justify-content:center; align-items:center; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif; }}
-    canvas {{ touch-action:none; display:block; border:2px solid #000; }}
-    #submitBtn {{ position:fixed; top:10px; right:10px; z-index:10; padding:8px 12px; font-family:inherit; }}
-    #colorIndicator {{ position:fixed; top:10px; left:10px; z-index:10; padding:4px 8px; background-color:rgba(255,255,255,0.8); border:1px solid #000; border-radius:4px; font-family:inherit; }}
-  </style>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>Draw2D Canvas</title>
+<style>
+body { margin:0; padding:20px; background:#f0f0f0; font-family:Arial; display:flex; flex-direction:column; align-items:center; }
+#canvas { border:2px solid #333; background:white; border-radius:8px; cursor:crosshair; }
+.controls { margin-top:20px; display:flex; gap:15px; align-items:center; }
+button { padding:8px 16px; background:#007bff; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold; }
+button:hover { background:#0056b3; }
+</style>
 </head>
 <body>
-<canvas id='drawCanvas'></canvas>
+<canvas id='canvas' width='800' height='600'></canvas>
+<div class='controls'>
+<button id='clearBtn'>Clear</button>
 <button id='submitBtn'>Submit</button>
-<div id='colorIndicator'></div>
-        <script>
-        /* Removed JS block to restore compilation; please re-add drawing logic here */
-        // Helper to convert event to canvas coordinates
-        function toCanvas(e) {
-            const rect = canvas.getBoundingClientRect();
-            return {
-                x: Math.max(0, Math.min(e.clientX - rect.left, canvas.width)),
-                y: Math.max(0, Math.min(e.clientY - rect.top, canvas.height))
-            };
-        }
-
-        function resizeCanvas() {{
-          const vw = window.innerWidth;
-          const vh = window.innerHeight;
-          const scale = Math.min(vw / WORLD_WIDTH, vh / WORLD_HEIGHT);
-          const cw = WORLD_WIDTH * scale;
-          const ch = WORLD_HEIGHT * scale;
-          canvas.width = cw;
-          canvas.height = ch;
-          canvas.style.width = cw + 'px';
-          canvas.style.height = ch + 'px';
-          redraw();
-        }}
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
-
-        // Poll strokes from server and merge every 500ms
-        setInterval(() => {{
-          fetch('/data').then(r => r.json()).then(data => {{
-            strokesByClient = {{}};
-            clientColors = {{}};
-            for (let id in data) {{
-              let entry = data[id];
-              clientColors[id] = entry.color;
-              strokesByClient[id] = entry.strokes;
-            }}
-            redraw();
-          }});
-        }}, 500);
-        // Upload own strokes periodically for live updates
-        setInterval(() => {{
-          fetch('/upload?client=' + CLIENT_ID + '&color=' + CLIENT_COLOR, {{
-            method: 'POST',
-            headers: {{ 'Content-Type': 'application/json' }},
-            body: JSON.stringify(strokesByClient[CLIENT_ID] || [])
-          }});
-        }}, 200);
-
-        // Drawing events
-        let isDrawing = false;
-        let currentPointerId = null;
-        canvas.addEventListener('pointerdown', e => {{
-          if (isDrawing) return;
-          isDrawing = true;
-          currentPointerId = e.pointerId;
-          canvas.setPointerCapture(currentPointerId);
-          currentStroke = [];
-          strokesByClient[CLIENT_ID].push(currentStroke);
-          addPoint(e);
-        }});
-        canvas.addEventListener('pointermove', e => {{
-          if (!isDrawing || e.pointerId !== currentPointerId) return;
-          const p = toCanvas(e);
-          ctx.lineTo(p.x, p.y);
-          ctx.strokeStyle = CLIENT_COLOR;
-          ctx.lineWidth = 3;
-          ctx.stroke();
-          addPoint(e);
-        }});
-        function endStroke(e) {{
-          if (!isDrawing || e.pointerId !== currentPointerId) return;
-          addPoint(e);
-          isDrawing = false;
-          canvas.releasePointerCapture(currentPointerId);
-          currentPointerId = null;
-        }}
-        canvas.addEventListener('pointerup', endStroke);
-        canvas.addEventListener('pointercancel', endStroke);
-
-        function addPoint(e) {{
-          const rect = canvas.getBoundingClientRect();
-          let px = e.clientX - rect.left;
-          let py = e.clientY - rect.top;
-          px = Math.max(0, Math.min(px, canvas.width));
-          py = Math.max(0, Math.min(py, canvas.height));
-          let wx = (px / canvas.width) * WORLD_WIDTH;
-          let wy = ((canvas.height - py) / canvas.height) * WORLD_HEIGHT;
-          if (currentStroke) {{
-            currentStroke.push({{ x: wx, y: wy }});
-            // (removed live upload here for smoother drawing)
-          }}
-        }}
-
-        function redraw() {{
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          // border
-          ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = '#000';
-          ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
-          ctx.restore();
-
-          // draw preloaded curves
-          ctx.save(); ctx.strokeStyle = '#888'; ctx.lineWidth = 1;
-          for (let stroke of PRELOAD_STROKES) {{
-            if (stroke.length < 2) continue;
-            ctx.beginPath();
-            let p0 = stroke[0];
-            ctx.moveTo(p0.x / WORLD_WIDTH * canvas.width, (1 - p0.y / WORLD_HEIGHT) * canvas.height);
-            for (let pt of stroke) {{
-              ctx.lineTo(pt.x / WORLD_WIDTH * canvas.width, (1 - pt.y / WORLD_HEIGHT) * canvas.height);
-            }}
-            ctx.stroke();
-          }}
-          ctx.restore();
-
-          // draw each client's strokes in its color
-          for (let id in strokesByClient) {{
-            let color = id === CLIENT_ID
-              ? CLIENT_COLOR
-              : (clientColors[id] || '#000000');
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-            for (let stroke of strokesByClient[id]) {{
-              if (stroke.length < 2) continue;
-              ctx.beginPath();
-              let p0 = stroke[0];
-              ctx.moveTo(p0.x / WORLD_WIDTH * canvas.width, (1 - p0.y / WORLD_HEIGHT) * canvas.height);
-              for (let pt of stroke) {{
-                ctx.lineTo(pt.x / WORLD_WIDTH * canvas.width, (1 - pt.y / WORLD_HEIGHT) * canvas.height);
-              }}
-              ctx.stroke();
-            }}
-          }}
-        }}
-// simple hash for color
-function hashCode(str) {{ return str.split('').reduce((h,c)=>((h<<5)-h)+c.charCodeAt(0),0); }}
-document.getElementById('submitBtn').addEventListener('click', () => {{
-  fetch('/upload?client='+CLIENT_ID+'&color='+CLIENT_COLOR, {{
-    method:'POST', headers:{{'Content-Type':'application/json'}},
-    body: JSON.stringify(strokesByClient[CLIENT_ID])
-  }})
-  .then(() => {{ document.body.innerHTML = '<h2>Submitted</h2>'; }})
-  .catch(err => alert('Upload failed:' + err));
-}});
+</div>
+<script>
+const initialData = %%DATA%%;
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const clearBtn = document.getElementById('clearBtn');
+const submitBtn = document.getElementById('submitBtn');
+let isDrawing=false, lastX=0, lastY=0, strokes=[], currentStroke=null;
+ctx.lineCap='round'; ctx.lineJoin='round'; ctx.lineWidth=3;
+function drawInitial(){ const w=canvas.width, h=canvas.height; ctx.strokeStyle='#888'; ctx.lineWidth=1; ctx.strokeRect(0,0,w,h); const s=initialData; ctx.strokeStyle='#000'; ctx.lineWidth=2; s.curves.forEach(curve=>{ ctx.beginPath(); curve.forEach((p,i)=>{ const x=p.x*w/s.bedX, y=h-p.y*h/s.bedY; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }); ctx.stroke(); });}
+function startDrawing(e){ isDrawing=true; const r=canvas.getBoundingClientRect(); const x=e.clientX-r.left, y=e.clientY-r.top; lastX=x; lastY=y; currentStroke={points:[{x,y}]}; strokes.push(currentStroke); ctx.beginPath(); ctx.moveTo(x,y); }
+function draw(e){ if(!isDrawing) return; const r=canvas.getBoundingClientRect(); const x=e.clientX-r.left, y=e.clientY-r.top; currentStroke.points.push({x,y}); ctx.lineTo(x,y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x,y); }
+function stopDrawing(){ if(!isDrawing) return; isDrawing=false; ctx.beginPath(); }
+canvas.addEventListener('mousedown',startDrawing);
+canvas.addEventListener('mousemove',draw);
+canvas.addEventListener('mouseup',stopDrawing);
+canvas.addEventListener('mouseout',stopDrawing);
+canvas.addEventListener('touchstart',e=>{ e.preventDefault(); const t=e.touches[0]; startDrawing(new MouseEvent('mousedown',{clientX:t.clientX,clientY:t.clientY})); });
+canvas.addEventListener('touchmove',e=>{ e.preventDefault(); const t=e.touches[0]; draw(new MouseEvent('mousemove',{clientX:t.clientX,clientY:t.clientY})); });
+canvas.addEventListener('touchend',e=>{ e.preventDefault(); stopDrawing(); });
+clearBtn.addEventListener('click',()=>{ ctx.clearRect(0,0,canvas.width,canvas.height); drawInitial(); strokes=[]; });
+submitBtn.addEventListener('click',()=>{ fetch('/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({strokes,width:canvas.width,height:canvas.height})}).then(()=>{ document.body.innerHTML='<h2>Submitted</h2>'; }).catch(e=>alert('Error:'+e)); });
+drawInitial();
 </script>
 </body>
 </html>";
-        }
-
-        /// <summary>
-        /// Displays a window containing the QR code and URL for mobile connection.
-        /// </summary>
-        private void ShowQrCode(string url)
-        {
-            var qrGenerator = new QRCodeGenerator();
-            var qrData = qrGenerator.CreateQrCode(url, QRCodeGenerator.ECCLevel.Q);
-            var pngQr = new PngByteQRCode(qrData);
-            var qrBytes = pngQr.GetGraphic(20);
-            using var ms = new MemoryStream(qrBytes);
-            var etoBmp = new Bitmap(ms);
-            var imageView = new ImageView { Image = etoBmp, Size = etoBmp.Size };
-            var label = new Label { Text = url, Wrap = WrapMode.Word, TextAlignment = TextAlignment.Center };
-            var layout = new DynamicLayout { DefaultSpacing = new Size(5, 5), Padding = new Padding(10) };
-            layout.AddCentered(imageView);
-            layout.AddCentered(label);
-            var form = new Form
-            {
-                Title = "Scan QR Code to Connect",
-                ClientSize = new Size(etoBmp.Width + 20, etoBmp.Height + 60),
-                Content = layout,
-                Resizable = false
-            };
-            form.Location = new Eto.Drawing.Point(0, 0);
-            form.Show();
+            return template.Replace("%%DATA%%", json);
         }
 
         private int GetFreePort()
@@ -533,24 +259,43 @@ document.getElementById('submitBtn').addEventListener('click', () => {{
             {
                 using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
                 socket.Connect("8.8.8.8", 65530);
-                if (socket.LocalEndPoint is IPEndPoint endPoint)
-                    return endPoint.Address.ToString();
+                if (socket.LocalEndPoint is IPEndPoint end) return end.Address.ToString();
             }
-            catch {}
+            catch { }
             try
             {
                 var addrs = Dns.GetHostAddresses(Dns.GetHostName());
-                foreach (var addr in addrs)
-                    if (addr.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(addr))
-                        return addr.ToString();
+                foreach (var a in addrs) if (a.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(a)) return a.ToString();
             }
-            catch {}
+            catch { }
             return "localhost";
         }
-        private string GetServerUrl()
+
+        private void ShowQrCode(string url)
         {
-            var ip = GetLocalIPAddress();
-            return $"http://{ip}:{_port}/";
+            var qrGenerator = new QRCodeGenerator();
+            var qrData = qrGenerator.CreateQrCode(url, QRCodeGenerator.ECCLevel.Q);
+            var pngQr = new PngByteQRCode(qrData);
+            var qrBytes = pngQr.GetGraphic(20);
+            using var ms = new MemoryStream(qrBytes);
+            var bmp = new Bitmap(ms);
+            var imageView = new ImageView { Image = bmp, Size = bmp.Size };
+            var label = new Label { Text = url, Wrap = WrapMode.Word, TextAlignment = TextAlignment.Center };
+            var layout = new DynamicLayout { DefaultSpacing = new Size(5,5), Padding = new Padding(10) };
+            layout.AddCentered(imageView);
+            layout.AddCentered(label);
+            var form = new Form
+            {
+                Title = "Scan to Draw",
+                ClientSize = new Size(bmp.Width+20, bmp.Height+60),
+                Content = layout,
+                Resizable = false
+            };
+            form.Show();
         }
+
+        private class PointDto { public double x; public double y; }
+        private class Stroke { public List<PointDto> points; }
+        private class UploadData { public List<Stroke> strokes; public double width; public double height; }
     }
 }
