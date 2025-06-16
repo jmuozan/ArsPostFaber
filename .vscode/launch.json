@@ -6,22 +6,20 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "build",
-      "program": "",
-      "osx": {
-        "program": "/Applications/Rhino 8.app/Contents/MacOS/Rhinoceros",
-        "args": [
-          "-runscript=_Grasshopper"
-        ]
-      },
+      "program": "/Applications/Rhino 8.app/Contents/MacOS/Rhinoceros",
+      "args": [
+        "-nosplash",
+        "-runscript=_Grasshopper"
+      ],
       "windows": {
         "program": "C:\\Program Files\\Rhino 8\\System\\Rhino.exe",
         "targetArchitecture": "x86_64",
         "args": "/netcore /runscript=\"_Grasshopper\""
       },
       "env": {
-        "RHINO_PACKAGE_DIRS": "${workspaceFolder}/bin/Debug"
+        "RHINO_PACKAGE_DIRS": "${workspaceFolder}/bin/Debug/net7.0/osx-arm64"
       },
-      "cwd": "${workspaceFolder}",
+      "cwd": "/Applications/Rhino 8.app/Contents/MacOS",
       "stopAtEntry": false,
       "console": "internalConsole"
     },

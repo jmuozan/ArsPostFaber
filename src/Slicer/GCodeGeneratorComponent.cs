@@ -54,8 +54,14 @@ namespace crft
             DA.GetDataList(3, startLines);
             DA.GetDataList(4, endLines);
             var lines = new List<string>();
-            // Always home axes at start
+            // Home axes and configure firmware motion limits
             lines.Add("G28");
+            // Raise max feedrates so F values in G1/G2 commands are not clamped (mm/sec)
+            lines.Add("M203 X200 Y200 Z5 E25");
+            // Apply firmware tuning: higher acceleration and junction deviation for short moves
+            lines.Add("M201 X3000 Y3000 Z100 E3000");
+            lines.Add("M204 P2000 R2000 T2000");
+            lines.Add("M205 X20 Y20 Z0.5 E10");
             if (startLines.Count > 0)
                 lines.AddRange(startLines);
             else
@@ -121,7 +127,7 @@ namespace crft
             return new Polyline(outPts);
         }
         /// <summary>
-        /// Smooths a polyline via running average over a sliding window of given size (points).
+        /// Smoothing polyline
         /// </summary>
         private static Polyline SmoothPolyline(Polyline poly, int window)
         {
@@ -148,6 +154,152 @@ namespace crft
             }
             result.Add(pts[n - 1]);
             return new Polyline(result);
+        }
+
+        // Preprocessing pipeline: remove degenerate and tiny segments
+        private static Polyline RemoveDegenerateSegments(Polyline poly)
+        {
+            if (poly.Count < 2) return poly;
+            var pts = new List<Point3d> { poly[0] };
+            for (int i = 1; i < poly.Count; i++)
+                if (poly[i].DistanceTo(poly[i - 1]) > 1e-6)
+                    pts.Add(poly[i]);
+            return new Polyline(pts);
+        }
+        private static Polyline MergeTinySegments(Polyline poly, double minSeg)
+        {
+            if (poly.Count < 2) return poly;
+            var pts = new List<Point3d> { poly[0] };
+            for (int i = 1; i < poly.Count; i++)
+                if (poly[i].DistanceTo(pts[pts.Count - 1]) >= minSeg)
+                    pts.Add(poly[i]);
+            if (pts.Count > 1 && !pts[pts.Count - 1].Equals(poly[poly.Count - 1]))
+                pts.Add(poly[poly.Count - 1]);
+            return new Polyline(pts);
+        }
+        
+        /// <summary>
+        /// Split segments longer than threshold into smaller segments
+        /// </summary>
+        private static Polyline SplitLongSegments(Polyline poly, double maxSeg)
+        {
+            if (poly.Count < 2) return poly;
+            var pts = new List<Point3d>();
+            for (int i = 0; i < poly.Count - 1; i++)
+            {
+                var p0 = poly[i];
+                var p1 = poly[i + 1];
+                pts.Add(p0);
+                double d = p0.DistanceTo(p1);
+                if (d > maxSeg)
+                {
+                    int count = (int)Math.Ceiling(d / maxSeg);
+                    for (int k = 1; k < count; k++)
+                    {
+                        double t = (double)k / count;
+                        pts.Add(new Point3d(
+                            p0.X + (p1.X - p0.X) * t,
+                            p0.Y + (p1.Y - p0.Y) * t,
+                            p0.Z + (p1.Z - p0.Z) * t));
+                    }
+                }
+            }
+            pts.Add(poly[poly.Count - 1]);
+            return new Polyline(pts);
+        }
+        
+        private static Polyline PreprocessPolyline(Polyline poly, SlicerSettings settings)
+        {
+            poly = RemoveDegenerateSegments(poly);
+            poly = MergeTinySegments(poly, settings.MinSegmentLength);
+            // Optional moving-average smoothing in preprocessing (small window)
+            if (settings.SmoothingSamples > 1)
+                poly = SmoothPolyline(poly, settings.SmoothingSamples);
+            return poly;
+        }
+
+        // Robust circle fitting using least-squares method
+        private static bool TryFitCircleRobust(List<Point3d> pts, double tol,
+            out Point3d center, out double radius, out bool clockwise)
+        {
+            center = Point3d.Origin; radius = 0; clockwise = true;
+            int n = pts.Count;
+            if (n < 3) return false;
+            double sumX = 0, sumY = 0, sumX2 = 0, sumY2 = 0, sumXY = 0;
+            double sumX3 = 0, sumY3 = 0, sumX2Y = 0, sumXY2 = 0;
+            foreach (var pt in pts)
+            {
+                double x = pt.X, y = pt.Y;
+                sumX += x; sumY += y;
+                sumX2 += x * x; sumY2 += y * y; sumXY += x * y;
+                sumX3 += x * x * x; sumY3 += y * y * y;
+                sumX2Y += x * x * y; sumXY2 += x * y * y;
+            }
+            double a = n * sumXY - sumX * sumY;
+            double b = n * sumX2 - sumX * sumX;
+            double c = n * sumY2 - sumY * sumY;
+            double d = 0.5 * (n * sumXY2 - sumX * sumY2 + n * sumX3 - sumX * sumX2);
+            double e = 0.5 * (n * sumX2Y - sumY * sumX2 + n * sumY3 - sumY * sumY2);
+            double det = a * a - b * c;
+            if (Math.Abs(det) < 1e-12) return false;
+            double cx = (a * e - c * d) / det;
+            double cy = (a * d - b * e) / det;
+            center = new Point3d(cx, cy, 0);
+            double sumR = 0;
+            foreach (var pt in pts) sumR += pt.DistanceTo(center);
+            radius = sumR / n;
+            double maxDev = 0;
+            foreach (var pt in pts)
+                maxDev = Math.Max(maxDev, Math.Abs(pt.DistanceTo(center) - radius));
+            if (maxDev > tol || radius < tol || radius > 1000) return false;
+            var cross = Vector3d.CrossProduct(pts[1] - pts[0], pts[2] - pts[1]);
+            clockwise = cross.Z < 0;
+            return true;
+        }
+        private static bool IsValidArcGeometry(List<Point3d> pts, Point3d center, double radius, double tol)
+        {
+            if (radius < tol || radius > 500) return false;
+            foreach (var pt in pts)
+                if (Math.Abs(pt.DistanceTo(center) - radius) > tol)
+                    return false;
+            double chord = pts.First().DistanceTo(pts.Last());
+            double arcLen = 0;
+            for (int i = 1; i < pts.Count; i++) arcLen += pts[i].DistanceTo(pts[i - 1]);
+            if (arcLen / chord < 1.02) return false;
+            return true;
+        }
+        /// <summary>
+        /// Find longest valid arc segment with extended lookahead
+        /// </summary>
+        private static ArcInfo FindLongestArcSegment(List<Point3d> points, int startIndex, double tol, int maxLookahead = 30)
+        {
+            var best = new ArcInfo { IsArc = false };
+            int n = points.Count;
+            int bestLen = 0;
+            for (int end = startIndex + 2; end < Math.Min(startIndex + maxLookahead, n); end++)
+            {
+                var segment = points.GetRange(startIndex, end - startIndex + 1);
+                if (TryFitCircleRobust(segment, tol, out Point3d center, out double radius, out bool cw) &&
+                    IsValidArcGeometry(segment, center, radius, tol) && (end - startIndex) > bestLen)
+                {
+                    Vector3d v1 = points[startIndex] - center;
+                    Vector3d v2 = points[end] - center;
+                    double angle = Vector3d.VectorAngle(v1, v2);
+                    double arcLen = radius * angle;
+                    best = new ArcInfo
+                    {
+                        IsArc = true,
+                        EndIndex = end,
+                        Center = center,
+                        IsClockwise = cw,
+                        ArcLength = arcLen,
+                        Radius = radius,
+                        SweepAngle = angle
+                    };
+                    bestLen = end - startIndex;
+                }
+            }
+            return best;
         }
         
         // Enhanced smoothing and arc interpolation methods
@@ -194,7 +346,7 @@ namespace crft
             int i = 0;
             while (i < points.Count - 1)
             {
-                var arcInfo = FindArcSegment(points, i, arcTolerance);
+                var arcInfo = FindLongestArcSegment(points, i, arcTolerance);
                 if (arcInfo.IsArc && arcInfo.EndIndex > i + 1)
                 {
                     var start = points[i];
@@ -227,6 +379,8 @@ namespace crft
             public Point3d Center;
             public bool IsClockwise;
             public double ArcLength;
+            public double Radius;
+            public double SweepAngle;
         }
         
         private static ArcInfo FindArcSegment(List<Point3d> points, int startIndex, double tolerance)
@@ -301,16 +455,24 @@ namespace crft
                 }
                 poly = new Polyline(pts);
             }
+            // Preprocess: remove degenerate/tiny segments
+            poly = PreprocessPolyline(poly, settings);
             // Apply angular decimation: use UI angle or default 10°
             double angleDeg = settings.SmoothingAngle > 0 ? settings.SmoothingAngle : 10.0;
             double angleRad = angleDeg * Math.PI / 180.0;
             poly = SimplifyPolylineAdvanced(poly, angleRad, settings.MinSegmentLength);
+            // Split long segments and smooth with moving average
+            poly = SplitLongSegments(poly, settings.MinSegmentLength * 2);
+            poly = SmoothPolyline(poly, settings.SmoothingSamples > 1 ? settings.SmoothingSamples : 3);
             if (poly.Count < 2) return lines;
             var ptsList = poly.ToArray().ToList();
             var start = ptsList[0];
             lines.Add($"G0 X{start.X:F3} Y{start.Y:F3} Z{start.Z:F3}");
-            // Generate toolpath moves (linear with junction control)
-            lines.AddRange(GenerateOptimizedLinearMoves(ptsList, settings, ref e));
+            // Generate smooth toolpath: arcs where possible, else optimized linear moves
+            if (settings.UseArcInterpolation)
+                lines.AddRange(ConvertToArcs(ptsList, settings.PrintSpeed, ref e, settings.ArcTolerance));
+            else
+                lines.AddRange(GenerateOptimizedLinearMoves(ptsList, settings, ref e));
             return lines;
         }
         

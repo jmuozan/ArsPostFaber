@@ -10,7 +10,7 @@ namespace SAMforGrasshopper
         {
             get
             {
-                return "SAM for Grasshopper";
+                return "SAM Grasshopper";
             }
         }
         public override Bitmap Icon

@@ -73,12 +73,7 @@
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Getting Started
-Follow these steps to set up the plugin locally.
 
-### Prerequisites
-
-
-### Installation
 
 
 
@@ -186,6 +181,6 @@ Amazing projects that have inspired and helped the developement of this project
 
 
 ## ToDo
-- [ ] gcode code from gh file
-- [ ] Sculpt module
-- [ ] llm vision
+- [ ] gcode
+- [ ] gcode plane
+- [ ] webapp for drawings rhinocommon

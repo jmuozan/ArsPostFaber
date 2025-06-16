@@ -12,6 +12,11 @@ This document describes how to use the new Slicer components in **crft** to gene
     - Infill Spacing (IS): spacing between infill lines in mm (default 10)
     - Print Speed (PS): extrusion speed in mm/min (default 1500)
     - Nozzle Diameter (ND): nozzle diameter in mm (default 0.4)
+    - Bed Width (BW): bed width in mm (default 200)
+    - Bed Depth (BD): bed depth in mm (default 200)
+    - Max Segment Length (ML): maximum segment length for curve approximation in mm (default 0 = use nozzle diameter)
+    - Smoothing Angle (SA): maximum angle change (deg) below which successive segments are merged (default 0 = off)
+    - Smoothing Samples (SS): window size for running average smoothing (number of points) (default 0 = off)
   - Output:
     - Settings (S): a **SlicerSettings** object encapsulating the parameters
 

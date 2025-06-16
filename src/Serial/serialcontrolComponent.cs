@@ -20,6 +20,8 @@ namespace crft
     public class SerialControlComponent : GH_Component
     {
         private ISerialPort _serialPort;
+        // Task for asynchronous connection to avoid blocking SolveInstance
+        private Task _connectTask;
         private bool _lastConnect;
         private bool _lastReset;
         private readonly List<string> _responseLog = new List<string>();
@@ -62,7 +64,29 @@ namespace crft
         // Home position (where G28 ends)
         private Point3d _homePosition = new Point3d(0, 0, 0);
         // Number of sample points along entire path for preview visualization
-        private int _samplesPerSegment = 0;
+        private int _samplesPerSegment = 8;
+        // Buffer management (sliding window)
+        private int _receiveCacheSize = 127;        // Printer RX buffer size in bytes
+        private LinkedList<NackData> _ackWindow = new LinkedList<NackData>();
+        private readonly object _windowLock = new object();
+        private AutoResetEvent _writeEvent;
+        private Thread _writeThread;
+        private bool _paused;
+
+        // Enhanced communication
+        private readonly object _responseLock = new object();
+        private AutoResetEvent _okEvent;                // signals receipt of 'ok'
+        private bool _printerReady;
+        private bool _useLineNumbers;
+        private int _expectedLineNumber;
+        private CancellationTokenSource _printCts;      // cancel printing
+        private Task _printTask;
+        // Represents a sent command awaiting ACK, tracking its byte length
+        private class NackData
+        {
+            public int Length;
+            public NackData(int length) { Length = length; }
+        }
 
         // Removed SaveEditedPath per user request; save functionality now confined to preview window.
 
@@ -163,9 +187,8 @@ namespace crft
             pManager.AddIntegerParameter("Baud Rate", "B", "Baud rate (e.g., 115200)", GH_ParamAccess.item, 115200);
             // Connect/disconnect toggle
             pManager.AddBooleanParameter("Connect", "C", "Connect to printer", GH_ParamAccess.item, false);
-            // G-code commands to stream (one per list item)
-            pManager.AddTextParameter("Command", "Cmd", "G-code commands to send sequentially", GH_ParamAccess.list);
-            // Allow missing command list; connect button first then stream later
+            // G-code commands to stream (as multiline string)
+            pManager.AddTextParameter("Command", "Cmd", "G-code commands to send (one line per entry or multiline text)", GH_ParamAccess.list);
             pManager[3].Optional = true;
             // Reset playback to beginning when toggled
             pManager.AddBooleanParameter("Reset", "R", "Reset playback to beginning", GH_ParamAccess.item, false);
@@ -192,6 +215,102 @@ namespace crft
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
+            // Read inputs
+            string portName = string.Empty;
+            int baudRate = 115200;
+            bool connect = false;
+            DA.GetData("Port", ref portName);
+            DA.GetData("Baud Rate", ref baudRate);
+            DA.GetData("Connect", ref connect);
+            // Read G-code commands (list or multiline) and split into individual lines
+            var commandsList = new List<string>();
+            DA.GetDataList("Command", commandsList);
+            var lines = commandsList
+                .SelectMany(cmd => cmd.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries))
+                .Select(l => l.Trim())
+                .ToList();
+
+            // On connect rise: open port, clear buffers, send with ACK
+            if (connect && !_lastConnect)
+            {
+                try
+                {
+                    // Open serial port
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                        _serialPort = new WindowsSerialPort(portName, baudRate);
+                    else
+                        _serialPort = new UnixSerialPort(
+                            portName.StartsWith("/") ? portName : Path.Combine("/dev", portName),
+                            baudRate);
+                    _serialPort.Open();
+                    // Clear any existing data
+                    _serialPort.ClearBuffers();
+                    // Setup enhanced handlers and prepare streaming
+                    SetupSerialPortHandlers();
+                    _printCommands = new List<string>(lines);
+                    _lastCommandsList = new List<string>(_printCommands);
+                    _currentLineIndex = 0;
+                    _isPlaying = false;
+                    if (_writeEvent == null)
+                        _writeEvent = new AutoResetEvent(false);
+                    if (_writeThread == null)
+                    {
+                        _writeThread = new Thread(WriteLoop) { IsBackground = true };
+                        _writeThread.Start();
+                    }
+                    // Prepare for streaming: start paused, user must press ▶ to begin
+                    _paused = true;
+                    _status = $"Loaded {_printCommands.Count} commands";
+                    _lastEvent = _status;
+                }
+                catch (Exception ex)
+                {
+                    _status = $"Error: {ex.Message}";
+                    _lastEvent = _status;
+                }
+            }
+            // On disconnect: close port and stop streaming
+            else if (!connect && _lastConnect)
+            {
+                if (_serialPort != null)
+                {
+                    try { _serialPort.ClearBuffers(); _serialPort.Close(); } catch { }
+                    _serialPort = null;
+                }
+                _isPlaying = false;
+                if (_writeThread != null)
+                {
+                    try { _writeThread.Join(500); } catch { }
+                    _writeThread = null;
+                }
+                _currentLineIndex = 0;
+                _printCommands?.Clear();
+                _lastEvent = "Disconnected";
+                _status = _lastEvent;
+            }
+            _lastConnect = connect;
+            // Handle Reset toggle: reload commands and reset playback state
+            bool reset = false;
+            DA.GetData("Reset", ref reset);
+            if (reset && !_lastReset)
+            {
+                _printCommands = new List<string>(lines);
+                _lastCommandsList = new List<string>(_printCommands);
+                _currentLineIndex = 0;
+                _paused = true;
+                _isPlaying = false;
+                _status = "Reset to beginning";
+                _lastEvent = _status;
+            }
+            _lastReset = reset;
+            // Output
+            DA.SetData("Response", _status);
+            DA.SetData("PortEvent", _lastEvent);
+            DA.SetData("Path", null);
+            DA.SetDataList("GCode", lines);
+            return;
+        }
+        #if false
             // Input variables
             string portName = string.Empty;
             int baudRate = 115200;
@@ -204,16 +323,18 @@ namespace crft
             DA.GetData("Connect", ref connect);
             // Get list of commands (one string per G-code line)
             DA.GetDataList("Command", commandsList);
-            // Override with any edited commands
-            if (_lastCommandsList != null && _lastCommandsList.Count > 0)
+            // Split any multiline command entries into individual commands
             {
-                commandsList = new List<string>(_lastCommandsList);
+                var flat = new List<string>();
+                foreach (var cmd in commandsList)
+                {
+                    var lines = cmd.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var line in lines)
+                        flat.Add(line);
+                }
+                commandsList = flat;
             }
-            else
-            {
-                // Cache commands for preview
-                _lastCommandsList = new List<string>(commandsList);
-            }
+            // Always use the current commands from the input panel (no internal caching)
             DA.GetData("Reset", ref reset);
             // Get bounding box inputs
             var bboxDims = _printerBBoxDims;
@@ -251,62 +372,47 @@ namespace crft
 
             if (connect && !_lastConnect)
             {
-                try
+                _status = "Connecting...";
+                _lastEvent = _status;
+                ExpireSolution(true);
+                _connectTask = Task.Run(() =>
                 {
-                    // Initialize cross-platform serial port
-                    // Windows: use SerialPortStream (RJCP)
-                    // Unix-like (including macOS): use UnixSerialPort (stty + FileStream)
-                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    try
                     {
-                        _serialPort = new WindowsSerialPort(portName, baudRate);
-                    }
-                    else
-                    {
-                        // On Unix/macOS use file-stream implementation
-                        string device = portName.StartsWith("/") ? portName : Path.Combine("/dev", portName);
-                        _serialPort = new UnixSerialPort(device, baudRate);
-                    }
-                    _responseLog.Clear();
-                    // Handle incoming data and signal acknowledgments
-                    _serialPort.DataReceived += data =>
-                    {
-                        // Always log incoming data
-                        _responseLog.Add(data);
-                        var trimmed = data.TrimStart();
-                        // Update last event only for non-busy messages
-                        if (!trimmed.StartsWith("echo:busy", StringComparison.OrdinalIgnoreCase))
-                        {
-                            _lastEvent = $"Received: {data}";
-                        }
-                        // Signal OK acknowledgment if waiting
-                        if (_ackEvent != null && trimmed.StartsWith("ok", StringComparison.OrdinalIgnoreCase))
-                        {
-                            _ackEvent.Set();
-                        }
-                    };
-                    _serialPort.Open();
-                    // Clear any stray data and send initial handshake to reset line numbers
-                    _serialPort.ClearBuffers();
-                    _serialPort.WriteLine("M110 N0");  // Reset line numbering
-                    Thread.Sleep(100);                  // Wait for printer to process
-                    _lastEvent = $"Connected to {portName}";
-                    // Load commands for playback, await play button
-                    if (commandsList.Count > 0)
-                    {
-                        _printCommands = new List<string>(commandsList);
-                        _currentLineIndex = 0;
-                        _isPlaying = false;
                         _ackEvent = new AutoResetEvent(false);
-                        _status = $"Loaded {_printCommands.Count} commands";
+                        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                        {
+                            _serialPort = new WindowsSerialPort(portName, baudRate);
+                        }
+                        else
+                        {
+                            string device = portName.StartsWith("/") ? portName : Path.Combine("/dev", portName);
+                            // Use FileStream-based serial port on Unix/macOS
+                            _serialPort = new UnixSerialPort(device, baudRate);
+                        }
+                        // Initialize serial connection (no handshake fallback)
+                        InitializeConnection();
+                        if (commandsList.Count > 0)
+                        {
+                            _printCommands = new List<string>(commandsList);
+                            _currentLineIndex = 0;
+                            _ackEvent = new AutoResetEvent(false);
+                            _isPlaying = false;
+                            _status = $"Loaded {_printCommands.Count} commands";
+                            _lastEvent = _status;
+                        }
+                        _hasPreviewEdits = false;
+                        _editedPreviewPoints = null;
                     }
-                    // Clear any previous preview edits on new connection
-                    _hasPreviewEdits = false;
-                    _editedPreviewPoints = null;
-                }
-                catch (Exception ex)
-                {
-                    _lastEvent = $"Connection error: {ex.Message}";
-                }
+                    catch (Exception ex)
+                    {
+                        _lastEvent = $"Connection error: {ex.Message}";
+                    }
+                    finally
+                    {
+                        ExpireSolution(true);
+                    }
+                });
             }
             else if (!connect && _lastConnect)
             {
@@ -350,87 +456,24 @@ namespace crft
             _lastReset = reset;
 
 
-            // Output current status, port event, and toolpath
+            // Output statuses quickly and skip heavy path preview while printing
             DA.SetData("Response", _status);
             DA.SetData("PortEvent", _lastEvent);
-            // Parse G-code commands into colored toolpath segments
-            _execTransSegs.Clear();
-            _execExtrusionSegs.Clear();
-            _unexecTransSegs.Clear();
-            _unexecExtrusionSegs.Clear();
-            var points = new List<Point3d>();
-            var currentPoint = new Point3d(0, 0, 0);
-            double currentE = 0;
-            points.Add(currentPoint);
-            for (int i = 0; i < commandsList.Count; i++)
-            {
-                var s = commandsList[i].Trim();
-                if (s.StartsWith("G0", StringComparison.OrdinalIgnoreCase) || s.StartsWith("G1", StringComparison.OrdinalIgnoreCase))
-                {
-                    double x = currentPoint.X;
-                    double y = currentPoint.Y;
-                    double z = currentPoint.Z;
-                    double newE = currentE;
-                    var tokens = s.Split(new[] {' ', '\t'}, StringSplitOptions.RemoveEmptyEntries);
-                    foreach (var token in tokens)
-                    {
-                        if (token.Length < 2) continue;
-                        char prefix = char.ToUpper(token[0]);
-                        if (!double.TryParse(token.Substring(1), NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
-                            continue;
-                        switch (prefix)
-                        {
-                            case 'X': x = value; break;
-                            case 'Y': y = value; break;
-                            case 'Z': z = value; break;
-                            case 'E': newE = value; break;
-                        }
-                    }
-                    var nextPoint = new Point3d(x, y, z);
-                    var segment = new LineCurve(currentPoint, nextPoint);
-                    // Determine if this move is an extrusion (G1 with increasing E)
-                    bool isExtrude = s.StartsWith("G1", StringComparison.OrdinalIgnoreCase) && newE > currentE;
-                    if (i < _currentLineIndex)
-                    {
-                        if (isExtrude) _execExtrusionSegs.Add(segment);
-                        else _execTransSegs.Add(segment);
-                    }
-                    else
-                    {
-                        if (isExtrude) _unexecExtrusionSegs.Add(segment);
-                        else _unexecTransSegs.Add(segment);
-                    }
-                    currentPoint = nextPoint;
-                    currentE = newE;
-                    points.Add(currentPoint);
-                }
-            }
-            // Output full path: use edited preview points if available, otherwise parse commands
-            Curve toolpath = null;
-            if (_hasPreviewEdits && _editedPreviewPoints != null && _editedPreviewPoints.Count > 1)
-            {
-                var editedPoly = new Polyline(_editedPreviewPoints);
-                toolpath = new PolylineCurve(editedPoly);
-            }
-            else if (points.Count > 1)
-            {
-                var polyline = new Polyline(points);
-                toolpath = new PolylineCurve(polyline);
-            }
-            DA.SetData("Path", toolpath);
-            // Output only the remaining G-code commands left to execute
-            List<string> remainingGCode;
-            // Use the active printCommands list if available, else fall back to input commandsList
-            var sourceList = (_printCommands != null && _printCommands.Count > 0) ? _printCommands : commandsList;
-            if (_currentLineIndex >= 0 && _currentLineIndex < sourceList.Count)
-                remainingGCode = sourceList.Skip(_currentLineIndex).ToList();
-            else
-                remainingGCode = new List<string>();
-            DA.SetDataList("GCode", remainingGCode);
+            // Provide a placeholder toolpath (degenerate) during print to keep SolveInstance light
+            var degenerate = new Polyline(new[] { _homePosition, _homePosition });
+            DA.SetData("Path", new PolylineCurve(degenerate));
+            // Remaining G-code lines
+            var src = (_printCommands != null && _printCommands.Count > 0) ? _printCommands : commandsList;
+            var remaining = (_currentLineIndex >= 0 && _currentLineIndex < src.Count)
+                ? src.Skip(_currentLineIndex).ToList()
+                : new List<string>();
+            DA.SetDataList("GCode", remaining);
+            return;
         }
         /// <summary>
         /// Add custom UI button under the component for playback control
         /// </summary>
+        #endif
         public override void CreateAttributes()
         {
             // Toolbar with Play/Pause and Edit buttons
@@ -474,13 +517,15 @@ namespace crft
                         _editedPreviewPoints = null;
                     }
                     // Start or resume printing from current line
-                    if (_printThread == null)
+                    if (_writeEvent == null) _writeEvent = new AutoResetEvent(false);
+                    if (_writeThread == null)
                     {
-                        if (_ackEvent == null) _ackEvent = new AutoResetEvent(false);
-                        _printThread = new Thread(PrintLoop) { IsBackground = true };
-                        _printThread.Start();
+                        _writeThread = new Thread(WriteLoop) { IsBackground = true };
+                        _writeThread.Start();
                     }
-                    _status = $"Resumed printing at line {_currentLineIndex + 1}";
+                    _paused = false;
+                    _writeEvent.Set();
+                    _status = $"Resumed printing at line {_currentLineIndex}";
                     _lastEvent = _status;
                     AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, _status);
                     _isPlaying = true;
@@ -488,6 +533,7 @@ namespace crft
                 else
                 {
                     // Pause printing after current line
+                    _paused = true;
                     _status = $"Paused after line {_currentLineIndex}";
                     _lastEvent = _status;
                     AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, _status);
@@ -611,44 +657,196 @@ namespace crft
             }
         }
 
-        /// <summary>
-        /// Background print loop: sends G-code sequentially with pause/resume support.
-        /// </summary>
-        private void PrintLoop()
+
+        // ------- Serial Optimization Helper Methods -------
+        // Determines if a command gets buffered by the printer
+        private bool IsBufferedCommand(string command)
         {
-            while (_currentLineIndex < _printCommands.Count)
+            var cmd = command.Trim().ToUpper();
+            if (cmd.StartsWith("G0") || cmd.StartsWith("G1") || cmd.StartsWith("G2") || cmd.StartsWith("G3"))
+                return true;
+            if (cmd.StartsWith("G4")) // Dwell
+                return true;
+            if (cmd.StartsWith("M104") || cmd.StartsWith("M105") || cmd.StartsWith("M106") ||
+                cmd.StartsWith("M107") || cmd.StartsWith("M109") || cmd.StartsWith("M190"))
+                return false;
+            if (cmd.StartsWith("M"))
+                return true;
+            return false;
+        }
+
+        // Format command with line number and checksum for reliable transmission
+        private string FormatCommandWithLineNumber(string command, int lineNumber)
+        {
+            command = command.Trim();
+            int semicolonPos = command.IndexOf(';');
+            if (semicolonPos >= 0)
+                command = command.Substring(0, semicolonPos).Trim();
+    string baseCmd = $"N{lineNumber} {command}";
+    int checksum = 0;
+    foreach (char c in baseCmd) checksum ^= (c & 0xff);
+    checksum ^= 32;
+    string formatted = $"{baseCmd} *{checksum}";
+    return formatted;
+        }
+
+        // Enhanced command sending with line numbers
+        private bool SendCommandWithLineNumber(string command, int lineNumber)
+        {
+            try
             {
-                // Wait until playing
-                while (!_isPlaying)
-                    Thread.Sleep(100);
-                // Stop if port closed
-                if (_serialPort == null || !_serialPort.IsOpen)
-                    break;
-                var cmd = _printCommands[_currentLineIndex];
+                string formatted = FormatCommandWithLineNumber(command, lineNumber);
+                _serialPort.WriteLine(formatted);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _lastEvent = $"Send error on line {lineNumber}: {ex.Message}";
+                return false;
+            }
+        }
+
+        // Extract parameter value from G-code response
+        private string ExtractParameter(string response, string parameter)
+        {
+            var parts = response.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in parts)
+                if (part.StartsWith(parameter, StringComparison.OrdinalIgnoreCase))
+                    return part.Substring(parameter.Length);
+            return null;
+        }
+
+        // Extract line number from resend request
+        private int ExtractResendLineNumber(string response)
+        {
+            var nParam = ExtractParameter(response, "N");
+            if (int.TryParse(nParam, out int num)) return num;
+            var parts = response.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < parts.Length - 1; i++)
+                if (parts[i].Equals("resend", StringComparison.OrdinalIgnoreCase) || parts[i].Equals("rs", StringComparison.OrdinalIgnoreCase))
+                    if (int.TryParse(parts[i+1], out num)) return num;
+            return _currentLineIndex;
+        }
+
+        // Enhanced connection initialization with proper handshake
+        private bool InitializeConnection()
+        {
+            try
+            {
+                SetupSerialPortHandlers();
+                _serialPort.Open();
+                _serialPort.ClearBuffers();
+                _printerReady = true;
+                _useLineNumbers = false;
+                _expectedLineNumber = 0;
+                _lastEvent = "Connected to printer successfully";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _lastEvent = $"Connection failed: {ex.Message}";
+                return false;
+            }
+        }
+
+        // Setup enhanced serial port data handlers
+        private void SetupSerialPortHandlers()
+        {
+            _serialPort.DataReceived += data =>
+            {
+                lock (_responseLock)
+                {
+                    _responseLog.Add(data);
+                    var trimmed = data.TrimStart();
+                    if (trimmed.StartsWith("ok", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Release one byte-window slot
+                        lock (_windowLock)
+                        {
+                            if (_ackWindow.Count > 0)
+                                _ackWindow.RemoveFirst();
+                        }
+                        // Signal write thread
+                        _writeEvent?.Set();
+                        // Also for fallback signaling
+                        _ackEvent?.Set();
+                        _printerReady = true;
+                    }
+                    else if (trimmed.StartsWith("start", StringComparison.OrdinalIgnoreCase) || trimmed.Contains("ready", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _printerReady = true;
+                        _lastEvent = "Printer ready";
+                    }
+                    else if (trimmed.StartsWith("error", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith("!!", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _lastEvent = $"Printer error: {data}";
+                        _printerReady = false;
+                    }
+                    else if (trimmed.StartsWith("resend", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith("rs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        int rl = ExtractResendLineNumber(trimmed);
+                        _lastEvent = $"Resend requested for line {rl}";
+                    }
+                    else if (!trimmed.StartsWith("echo:busy", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _lastEvent = $"Received: {data}";
+                    }
+                }
+            };
+        }
+        /// <summary>
+        /// Background write loop: push commands into printer buffer as space becomes available
+        /// </summary>
+        private void WriteLoop()
+        {
+            bool abort = false;
+            do
+            {
                 try
                 {
-                    // Send command and wait for ack and motion completion
-                    _status = $"Executing: {cmd}";
-                    _serialPort.WriteLine(cmd);
-                    _ackEvent.WaitOne();
-                    _serialPort.WriteLine("M400");
-                    _ackEvent.WaitOne();
+                    while (true)
+                    {
+                        _writeEvent.WaitOne();
+                        while (TrySendNextLine2()) { }
+                    }
+                }
+                catch (ThreadAbortException)
+                {
+                    abort = true;
                 }
                 catch (Exception ex)
                 {
-                    _lastEvent = $"Error: {ex.Message}";
-                    break;
+                    Debug.WriteLine(ex);
                 }
-                _currentLineIndex++;
-                ExpireSolution(true);
-            }
-            if (_currentLineIndex >= _printCommands.Count)
-            {
-                _isPlaying = false;
-                _lastEvent = "Print complete";
-            }
-            _printThread = null;
+            } while (!abort);
         }
+        /// <summary>
+        /// Attempt to send one G-code line if buffer window allows
+        /// </summary>
+        private bool TrySendNextLine2()
+        {
+            if (_paused) return false;
+            if (_serialPort == null || !_serialPort.IsOpen) return false;
+            if (_currentLineIndex >= _printCommands.Count) return false;
+            int pending = 0;
+            lock (_windowLock)
+                foreach (var nd in _ackWindow) pending += nd.Length;
+            // On UnixSerialPort (macOS/Linux), skip buffer-window throttle if no ACKs are received
+            if (!(_serialPort is UnixSerialPort) && pending >= _receiveCacheSize) return false;
+            var cmd = _printCommands[_currentLineIndex].Trim();
+            string outCmd = (_useLineNumbers && IsBufferedCommand(cmd))
+                ? FormatCommandWithLineNumber(cmd, _expectedLineNumber++)
+                : cmd;
+            var bytes = System.Text.Encoding.ASCII.GetBytes(outCmd + "\r\n");
+            // Send ASCII line; track its byte length for window
+            _serialPort.WriteLine(outCmd);
+            lock (_windowLock)
+                _ackWindow.AddLast(new NackData(bytes.Length));
+            _currentLineIndex++;
+            return true;
+        }
+
+        /// <summary>
 
         /// <summary>
         /// Build list of all path points along with their command indices.

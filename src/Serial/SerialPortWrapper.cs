@@ -257,8 +257,18 @@ namespace crft
 
         public void Open()
         {
+            // Ensure DTR/RTS are low before opening
+            _port.DtrEnable = false;
+            _port.RtsEnable = false;
             _port.Open();
             Thread.Sleep(300);
+            // Toggle DTR/RTS to reset printer on connect
+            _port.DtrEnable = true;
+            _port.RtsEnable = true;
+            Thread.Sleep(1000);
+            _port.DtrEnable = false;
+            _port.RtsEnable = false;
+            Thread.Sleep(100);
         }
 
         public void Close()

@@ -31,12 +31,28 @@
     <Compile Remove="mp\**" />
     <EmbeddedResource Remove="mp\**" />
     <None Remove="mp\**" />
+    <!-- Exclude slicer_tests folder from build since it contains duplicate component definitions -->
+    <Compile Remove="src\Slicer\slicer_tests\**" />
+    <EmbeddedResource Remove="src\Slicer\slicer_tests\**" />
+    <None Remove="src\Slicer\slicer_tests\**" />
+    <!-- Exclude slicer_tests folder from build since it contains duplicate component definitions -->
+    <Compile Remove="src\Slicer\slicer_tests\**" />
+    <EmbeddedResource Remove="src\Slicer\slicer_tests\**" />
+    <None Remove="src\Slicer\slicer_tests\**" />
+    <!-- Exclude docs/slicer_tests folder to avoid duplicate test components -->
+    <Compile Remove="docs\slicer_tests\**" />
+    <EmbeddedResource Remove="docs\slicer_tests\**" />
+    <None Remove="docs\slicer_tests\**" />
     <!-- Exclude GeneratedComponents from build as they are generated at runtime -->
     <Compile Remove="GeneratedComponents\**\*.cs" />
     <!-- Exclude PythonNETGrasshopperTemplate folder from build -->
-    <Compile Remove="PythonNETGrasshopperTemplate\**" />
-    <EmbeddedResource Remove="PythonNETGrasshopperTemplate\**" />
-    <None Remove="PythonNETGrasshopperTemplate\**" />
+    <Compile Remove="PythonNETGrasshopperTemplate/**" />
+    <EmbeddedResource Remove="PythonNETGrasshopperTemplate/**" />
+    <None Remove="PythonNETGrasshopperTemplate/**" />
+    <!-- Exclude Repetier-Host folder from build -->
+    <Compile Remove="Repetier-Host-master/**" />
+    <EmbeddedResource Remove="Repetier-Host-master/**" />
+    <None Remove="Repetier-Host-master/**" />
   </ItemGroup>
   
   <PropertyGroup>
@@ -81,6 +97,11 @@
     <None Include="scripts/meshedit/hands.py">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+  <!-- Remove any residual resource files from Repetier-Host folder -->
+  <ItemGroup>
+    <EmbeddedResource Remove="Repetier-Host-master/**/*.resx" />
+    <EmbeddedResource Remove="Repetier-Host-master/**/*.resources" />
   </ItemGroup>
   
   <!-- Use RuntimeIdentifier to ensure native libraries are properly included -->
@@ -154,6 +175,7 @@
   <ItemGroup>
     <!-- QR code generation library -->
     <PackageReference Include="QRCoder" Version="1.4.3" />
+    <PackageReference Include="System.Resources.Extensions" Version="7.0.0" />
   </ItemGroup>
 
 </Project>

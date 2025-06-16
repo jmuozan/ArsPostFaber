@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "/Users/jorgemuyo/Desktop/crft/crft.csproj": {}
+    "/Users/jorgemuyo/Desktop/ArsPostFaber/crft.csproj": {}
   },
   "projects": {
-    "/Users/jorgemuyo/Desktop/crft/crft.csproj": {
+    "/Users/jorgemuyo/Desktop/ArsPostFaber/crft.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "/Users/jorgemuyo/Desktop/crft/crft.csproj",
+        "projectUniqueName": "/Users/jorgemuyo/Desktop/ArsPostFaber/crft.csproj",
         "projectName": "crft",
-        "projectPath": "/Users/jorgemuyo/Desktop/crft/crft.csproj",
+        "projectPath": "/Users/jorgemuyo/Desktop/ArsPostFaber/crft.csproj",
         "packagesPath": "/Users/jorgemuyo/.nuget/packages/",
-        "outputPath": "/Users/jorgemuyo/Desktop/crft/obj/",
+        "outputPath": "/Users/jorgemuyo/Desktop/ArsPostFaber/obj/",
         "projectStyle": "PackageReference",
         "crossTargeting": true,
         "configFilePaths": [
@@ -126,6 +126,10 @@
               "version": "[8.0.0, )"
             },
             "System.IO.Ports": {
+              "target": "Package",
+              "version": "[7.0.0, )"
+            },
+            "System.Resources.Extensions": {
               "target": "Package",
               "version": "[7.0.0, )"
             },
