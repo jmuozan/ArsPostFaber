@@ -474,13 +474,17 @@ namespace crft
   <meta name='viewport' content='width=device-width, initial-scale=1.0'>
   <title>Draw2D Canvas</title>
   <style>
-    html, body { margin:0; padding:0; font-family:Arial,sans-serif; }
-    body { display:flex; flex-direction:column; align-items:center; padding:20px; background:#f0f0f0; }
-    #canvas { border:2px solid #333; background:#fff; border-radius:8px; touch-action:none; }
-    .controls { margin-top:10px; display:flex; gap:10px; }
-    button, select { padding:8px 16px; background:#007bff; color:#fff; border:none; border-radius:4px; cursor:pointer; }
-    button:hover, select:hover { background:#0056b3; }
-    #serialStatus { margin-left:8px; font-weight:bold; color:#333; }
+    html, body { margin:0; padding:0; width:100%; height:100%; background:#000; color:#fff; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+    body { display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding:10px; box-sizing:border-box; }
+    #canvas { background:#fff; border:none; border-radius:0; touch-action:none; display:block; }
+    .controls { margin-top:10px; display:flex; flex-wrap:wrap; gap:10px; width:100%; max-width:800px; justify-content:center; }
+    button, select { padding:10px 20px; background:#000; color:#fff; border:none; border-radius:0; cursor:pointer; font-size:1em; }
+    button:hover, select:hover { opacity:0.8; }
+    #serialStatus { margin-left:8px; font-weight:bold; color:#fff; }
+    @media (max-width: 600px) {
+      .controls { flex-direction:column; align-items:stretch; }
+      button, select { width:100%; }
+    }
   </style>
 </head>
 <body>
