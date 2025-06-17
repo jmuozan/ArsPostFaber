@@ -58,6 +58,8 @@ namespace crft
             pManager.AddNumberParameter("Z Down", "Z", "Height to lower pen for drawing", GH_ParamAccess.item, 0.0);
             pManager.AddNumberParameter("Feed Rate", "F", "Feed rate for drawing moves (mm/min)", GH_ParamAccess.item, 1000.0);
             pManager.AddNumberParameter("Travel Rate", "T", "Feed rate for travel moves (mm/min)", GH_ParamAccess.item, 3000.0);
+            // Allow drawing without supplying input curves
+            pManager[1].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager pManager)
@@ -313,22 +315,31 @@ namespace crft
                                 using var reader2 = new StreamReader(req.InputStream);
                                 var body2 = reader2.ReadToEnd();
                                 var connData = JsonConvert.DeserializeObject<ConnectData>(body2);
-                                try
+                                if (_serialPort != null && _serialPort.IsOpen)
                                 {
-                                    if (_serialPort != null && _serialPort.IsOpen) _serialPort.Close();
-                                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                                        _serialPort = new WindowsSerialPort(connData.port, connData.baud);
-                                    else
-                                        _serialPort = new UnixSerialPort(connData.port.StartsWith("/") ? connData.port : Path.Combine("/dev", connData.port), connData.baud);
-                                    _serialPort.Open();
-                                    _serialPort.ClearBuffers();
                                     resp.StatusCode = 200;
+                                    resp.Close();
                                 }
-                                catch
+                                else
                                 {
-                                    resp.StatusCode = 500;
+                                    try
+                                    {
+                                        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                                            _serialPort = new WindowsSerialPort(connData.port, connData.baud);
+                                        else
+                                            _serialPort = new UnixSerialPort(
+                                                connData.port.StartsWith("/") ? connData.port : Path.Combine("/dev", connData.port),
+                                                connData.baud);
+                                        _serialPort.Open();
+                                        _serialPort.ClearBuffers();
+                                        resp.StatusCode = 200;
+                                    }
+                                    catch
+                                    {
+                                        resp.StatusCode = 500;
+                                    }
+                                    resp.Close();
                                 }
-                                resp.Close();
                             }
                             // Handle disconnect request
                             else if (req.HttpMethod == "POST" && req.Url.AbsolutePath == "/disconnect")
@@ -356,10 +367,10 @@ namespace crft
                                 resp.StatusCode = 200;
                                 resp.Close();
                             }
-                            // Handle pause request
+                            // Handle pause request (no-op for multi-user client-side pause)
                             else if (req.HttpMethod == "POST" && req.Url.AbsolutePath == "/pause")
                             {
-                                _printing = false;
+                                // do not modify server printing; clients should pause locally
                                 resp.StatusCode = 200;
                                 resp.Close();
                             }
@@ -435,6 +446,10 @@ namespace crft
             _submissions.Clear();
             _inputCurves = null;
             _serverStarted = false;
+            // Clear G-code buffer and indices
+            _gcodeLines.Clear();
+            _lastProcessedSubmissionIndex = 0;
+            _currentGcodeLineIndex = 0;
         }
 
         private string BuildHtml()
@@ -601,6 +616,7 @@ namespace crft
     });
 
     function pollStrokes() {
+      if (localPaused) return;
       fetch('/strokes').then(r=>r.json()).then(d=>{ existingStrokes = d.strokes; drawAll(); });
     }
     // Serial port UI handlers
@@ -621,6 +637,7 @@ namespace crft
     const playBtn = document.getElementById('playBtn');
     const serialStatus = document.getElementById('serialStatus');
     let connected = false;
+    let localPaused = false;
     connBtn.addEventListener('click', () => {
       const sel = document.getElementById('portSelect');
       if (!connected) {
@@ -640,14 +657,27 @@ namespace crft
     playBtn.addEventListener('click', () => {
       if (!connected) return alert('Connect first');
       if (playBtn.textContent === 'Play') {
-        fetch('/play', { method: 'POST' })
-          .then(() => { playBtn.textContent = 'Pause'; serialStatus.textContent = 'Printing'; });
+        localPaused = false;
+        const sel = document.getElementById('portSelect');
+        // Reconnect silently to flush buffers and ensure printer readiness
+        fetch('/disconnect', { method: 'POST' })
+          .then(() => fetch('/connect', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ port: sel.value, baud: 115200 })
+          }))
+          .then(() => fetch('/play', { method: 'POST' }))
+          .then(() => { playBtn.textContent = 'Pause'; serialStatus.textContent = 'Printing'; })
+          .catch(() => alert('Play failed'));
       } else {
-        fetch('/pause', { method: 'POST' })
-          .then(() => { playBtn.textContent = 'Play'; serialStatus.textContent = 'Paused'; });
+        // client-side pause only
+        localPaused = true;
+        playBtn.textContent = 'Play';
+        serialStatus.textContent = 'Paused';
       }
     });
     function pollStatus() {
+      if (localPaused) return;
       fetch('/status')
         .then(r => r.json())
         .then(d => {
@@ -655,7 +685,14 @@ namespace crft
           playBtn.textContent = d.printing ? 'Pause' : 'Play';
         });
     }
-    window.addEventListener('load', () => { adjustCanvas(); pollStrokes(); loadPorts(); pollStatus(); setInterval(pollStrokes, 2000); setInterval(pollStatus, 2000); });
+    window.addEventListener('load', () => {
+      adjustCanvas(); loadPorts();
+      // initial polls
+      pollStrokes(); pollStatus();
+      // periodic polling
+      setInterval(() => { if (!localPaused) pollStrokes(); }, 2000);
+      setInterval(pollStatus, 2000);
+    });
     window.addEventListener('resize', ()=>{ adjustCanvas(); drawAll(); });
   </script>
 </body>
