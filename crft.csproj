@@ -21,16 +21,6 @@
   </PropertyGroup>
   
   <ItemGroup>
-    <!-- Exclude Segment-Anything folder from build since it contains WPF code -->
-    <Compile Remove="Segment-Anything\**" />
-      <!-- Exclude sim folder (examples) from build until integrated -->
-    <EmbeddedResource Remove="Segment-Anything\**" />
-    <None Remove="Segment-Anything\**" />
-    
-    <!-- Exclude mp folder from build since it contains duplicate definitions -->
-    <Compile Remove="mp\**" />
-    <EmbeddedResource Remove="mp\**" />
-    <None Remove="mp\**" />
     <!-- Exclude slicer_tests folder from build since it contains duplicate component definitions -->
     <Compile Remove="src\Slicer\slicer_tests\**" />
     <EmbeddedResource Remove="src\Slicer\slicer_tests\**" />
@@ -45,10 +35,6 @@
     <None Remove="docs\slicer_tests\**" />
     <!-- Exclude GeneratedComponents from build as they are generated at runtime -->
     <Compile Remove="GeneratedComponents\**\*.cs" />
-    <!-- Exclude PythonNETGrasshopperTemplate folder from build -->
-    <Compile Remove="PythonNETGrasshopperTemplate/**" />
-    <EmbeddedResource Remove="PythonNETGrasshopperTemplate/**" />
-    <None Remove="PythonNETGrasshopperTemplate/**" />
     <!-- Exclude Repetier-Host folder from build -->
     <Compile Remove="Repetier-Host-master/**" />
     <EmbeddedResource Remove="Repetier-Host-master/**" />
