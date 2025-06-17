@@ -367,10 +367,10 @@ namespace crft
                                 resp.StatusCode = 200;
                                 resp.Close();
                             }
-                            // Handle pause request (no-op for multi-user client-side pause)
+                            // Handle pause request: pause server-side printing
                             else if (req.HttpMethod == "POST" && req.Url.AbsolutePath == "/pause")
                             {
-                                // do not modify server printing; clients should pause locally
+                                _printing = false;
                                 resp.StatusCode = 200;
                                 resp.Close();
                             }
@@ -670,10 +670,14 @@ namespace crft
           .then(() => { playBtn.textContent = 'Pause'; serialStatus.textContent = 'Printing'; })
           .catch(() => alert('Play failed'));
       } else {
-        // client-side pause only
-        localPaused = true;
-        playBtn.textContent = 'Play';
-        serialStatus.textContent = 'Paused';
+        // pause printing on server and locally
+        fetch('/pause', { method: 'POST' })
+          .then(() => {
+            localPaused = true;
+            playBtn.textContent = 'Play';
+            serialStatus.textContent = 'Paused';
+          })
+          .catch(() => alert('Pause failed'));
       }
     });
     function pollStatus() {
