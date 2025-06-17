@@ -502,6 +502,105 @@ namespace crft
     const submitBtn = document.getElementById('submitBtn');
     const clientColor = initData.clientColor;
     let isDrawing = false, strokes = [], currentStroke = null;
+    // Add camera capture button and image processing pipeline
+    const imageBtn = document.createElement('button');
+    imageBtn.id = 'imageBtn';
+    imageBtn.textContent = 'Capture Image';
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file'; fileInput.accept = 'image/*'; fileInput.capture = 'environment'; fileInput.style.display = 'none';
+    const controlsDiv = document.querySelector('.controls');
+    controlsDiv.appendChild(imageBtn); controlsDiv.appendChild(fileInput);
+    const originalCanvas = document.createElement('canvas');
+    const originalCtx = originalCanvas.getContext('2d');
+    imageBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', e => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const img = new Image(); img.onload = () => {
+          const maxW = canvas.width, maxH = canvas.height;
+          const ratio = Math.min(maxW / img.width, maxH / img.height);
+          const w2 = Math.floor(img.width * ratio), h2 = Math.floor(img.height * ratio);
+          originalCanvas.width = w2; originalCanvas.height = h2;
+          originalCtx.drawImage(img, 0, 0, w2, h2);
+          const imageData = originalCtx.getImageData(0, 0, w2, h2);
+          const gray = toGrayscale(imageData);
+          const edges = detectEdges(gray, 100);
+          const contours = findContours(edges);
+          const simplified = simplifyContours(contours, 3, 50);
+          strokes = []; existingStrokes = [];
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          drawBase();
+          simplified.forEach(contour => {
+            const pts = contour.map(p => ({ x: p.x * canvas.width / w2, y: p.y * canvas.height / h2 }));
+            strokes.push({ points: pts });
+          }); drawAll();
+          fetch('/upload', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ strokes, width: canvas.width, height: canvas.height, color: clientColor }) });
+          strokes = [];
+        }; img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+    // Utility functions for image processing
+    function toGrayscale(imageData) {
+      const data = imageData.data; const grayData = new Uint8ClampedArray(imageData.width * imageData.height);
+      for (let i = 0; i < data.length; i += 4) {
+        const g = data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114;
+        grayData[i/4] = g;
+      } return { data: grayData, width: imageData.width, height: imageData.height };
+    }
+    function detectEdges(grayData, threshold) {
+      const { data, width, height } = grayData; const edges = new Uint8ClampedArray(width * height);
+      for (let y = 1; y < height - 1; y++) {
+        for (let x = 1; x < width - 1; x++) {
+          const idx = y * width + x;
+          const sobelX = -data[(y-1)*width + (x-1)] + data[(y-1)*width + (x+1)] +
+                         -2*data[y*width + (x-1)] + 2*data[y*width + (x+1)] +
+                         -data[(y+1)*width + (x-1)] + data[(y+1)*width + (x+1)];
+          const sobelY = -data[(y-1)*width + (x-1)] - 2*data[(y-1)*width + x] - data[(y-1)*width + (x+1)] +
+                         data[(y+1)*width + (x-1)] + 2*data[(y+1)*width + x] + data[(y+1)*width + (x+1)];
+          edges[idx] = Math.sqrt(sobelX*sobelX + sobelY*sobelY) > threshold ? 255 : 0;
+        }
+      } return { data: edges, width, height };
+    }
+    function findContours(edges) {
+      const { data, width, height } = edges; const visited = Array(width*height).fill(false), contours = [];
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const idx = y*width + x;
+        if (data[idx] === 255 && !visited[idx]) {
+          const contour = [], stack = [{x,y}];
+          while (stack.length) {
+            const { x:cx, y:cy } = stack.pop(), cidx = cy*width + cx;
+            if (cx<0||cx>=width||cy<0||cy>=height||visited[cidx]||data[cidx]!==255) continue;
+            visited[cidx]=true; contour.push({x:cx,y:cy});
+            for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++) if(dx||dy) stack.push({x:cx+dx,y:cy+dy});
+          }
+          if (contour.length>10) contours.push(contour);
+        }
+      }
+      return contours;
+    }
+    function simplifyContours(contours, eps, minSize) {
+      return contours.filter(c=>c.length>=minSize).map(c=>douglasPeucker(c,eps)).filter(c=>c.length>=3);
+    }
+    function douglasPeucker(pts, eps) {
+      if (pts.length<=2) return pts;
+      let dmax=0, idx=0; const start=pts[0], end=pts[pts.length-1];
+      for (let i=1;i<pts.length-1;i++){const d=pointToLineDistance(pts[i],start,end); if(d> dmax){dmax=d;idx=i;}}
+      if (dmax>eps) {
+        const l=douglasPeucker(pts.slice(0,idx+1),eps), r=douglasPeucker(pts.slice(idx),eps);
+        return l.slice(0,-1).concat(r);
+      }
+      return [start,end];
+    }
+    function pointToLineDistance(p,s,e) {
+      const A=p.x-s.x, B=p.y-s.y, C=e.x-s.x, D=e.y-s.y;
+      const dot=A*C+B*D, lenSq=C*C+D*D, param=lenSq?dot/lenSq:-1;
+      const xx=param<0?s.x:param>1?e.x:s.x+param*C;
+      const yy=param<0?s.y:param>1?e.y:s.y+param*D;
+      const dx=p.x-xx, dy=p.y-yy;
+      return Math.sqrt(dx*dx+dy*dy);
+    }
 
     function adjustCanvas() {
       const margin = 40;

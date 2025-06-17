@@ -12,7 +12,7 @@
 <!-- HEADER -->
 <br />
 <div align="center">
-  <a href="https://github.com/github_username/repo_name">
+  <a href="https://github.com/jmuozan/ArsPostFaber">
     <img src="docs/images/parasite.png" alt="Logo" width="100%">
   </a>
 
@@ -24,11 +24,11 @@
     <a href="https://jmuozan.github.io/ArsPostFaber-docs/"><strong>Explore the docs »</strong></a>
     <br />
     <br />
-    <a href="https://github.com/github_username/repo_name">View Demo</a>
+    <a href="https://github.com/github_username/ArsPostFaber">View Demo</a>
     ·
-    <a href="https://github.com/github_username/repo_name/issues">Report Bug</a>
+    <a href="https://github.com/github_username/ArsPostFaber/issues">Report Bug</a>
     ·
-    <a href="https://github.com/github_username/repo_name/issues">Request Feature</a>
+    <a href="https://github.com/github_username/ArsPostFaber/issues">Request Feature</a>
   </p>
 </div>
 
@@ -134,7 +134,7 @@ Project Link: [here](https://jmuozan.github.io/ArsPostFaber-docs/)
 
 Amazing projects that have inspired and helped the developement of this project
 
-* [t43](https://github.com/LingDong-/t43?tab=readme-ov-file)
+* [t43 slicer](https://github.com/LingDong-/t43?tab=readme-ov-file)
 * [Robots](https://github.com/visose/Robots)
 * [Vespidae](https://github.com/frikkfossdal/Vespidae)
 * [Python gh Template](https://github.com/JonasFeron/PythonNETGrasshopperTemplate)

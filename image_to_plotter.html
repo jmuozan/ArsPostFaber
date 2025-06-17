@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image to Plotter Strokes</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            max-width: 900px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 2.5em;
+            font-weight: bold;
+        }
+
+        .upload-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .upload-btn {
+            position: relative;
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1.1em;
+            font-weight: 600;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .upload-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.6);
+        }
+
+        .upload-btn input {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-bottom: 30px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .control-group label {
+            font-weight: 600;
+            color: #555;
+            font-size: 0.9em;
+        }
+
+        .slider {
+            width: 120px;
+            -webkit-appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: #ddd;
+            outline: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .process-btn {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 25px rgba(255, 107, 107, 0.3);
+        }
+
+        .process-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 35px rgba(255, 107, 107, 0.4);
+        }
+
+        .canvas-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+
+        .canvas-wrapper {
+            text-align: center;
+            background: white;
+            padding: 15px;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        .canvas-wrapper h3 {
+            margin-bottom: 10px;
+            color: #555;
+            font-size: 1.1em;
+        }
+
+        canvas {
+            border: 2px solid #eee;
+            border-radius: 10px;
+            max-width: 100%;
+            height: auto;
+        }
+
+        .download-section {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .download-btn {
+            background: linear-gradient(135deg, #2ed573, #1e8449);
+            color: white;
+            text-decoration: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: inline-block;
+            box-shadow: 0 8px 25px rgba(46, 213, 115, 0.3);
+        }
+
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 35px rgba(46, 213, 115, 0.4);
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+            
+            .canvas-container {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📸 → ✏️ Image to Plotter</h1>
+        
+        <div class="upload-section">
+            <label class="upload-btn">
+                📷 Capture or Upload Image
+                <input type="file" id="imageInput" accept="image/*" capture="environment">
+            </label>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>Edge Threshold</label>
+                <input type="range" id="edgeThreshold" class="slider" min="50" max="200" value="100">
+                <span id="edgeValue">100</span>
+            </div>
+            <div class="control-group">
+                <label>Simplification</label>
+                <input type="range" id="simplification" class="slider" min="1" max="10" value="3">
+                <span id="simpValue">3</span>
+            </div>
+            <div class="control-group">
+                <label>Min Contour Size</label>
+                <input type="range" id="minContour" class="slider" min="10" max="200" value="50">
+                <span id="contourValue">50</span>
+            </div>
+            <button id="processBtn" class="process-btn">🎨 Generate Strokes</button>
+        </div>
+
+        <div class="canvas-container">
+            <div class="canvas-wrapper">
+                <h3>Original Image</h3>
+                <canvas id="originalCanvas" width="400" height="300"></canvas>
+            </div>
+            <div class="canvas-wrapper">
+                <h3>Plotter Strokes</h3>
+                <canvas id="strokeCanvas" width="400" height="300"></canvas>
+            </div>
+        </div>
+
+        <div class="download-section hidden" id="downloadSection">
+            <a id="downloadBtn" class="download-btn">💾 Download SVG</a>
+        </div>
+    </div>
+
+    <script>
+        class ImageToPlotter {
+            constructor() {
+                this.originalCanvas = document.getElementById('originalCanvas');
+                this.strokeCanvas = document.getElementById('strokeCanvas');
+                this.originalCtx = this.originalCanvas.getContext('2d');
+                this.strokeCtx = this.strokeCanvas.getContext('2d');
+                
+                this.setupEventListeners();
+                this.setupSliders();
+            }
+
+            setupEventListeners() {
+                document.getElementById('imageInput').addEventListener('change', (e) => {
+                    this.loadImage(e.target.files[0]);
+                });
+                
+                document.getElementById('processBtn').addEventListener('click', () => {
+                    this.processImage();
+                });
+            }
+
+            setupSliders() {
+                const sliders = ['edgeThreshold', 'simplification', 'minContour'];
+                sliders.forEach(id => {
+                    const slider = document.getElementById(id);
+                    const valueSpan = document.getElementById(id.replace(/[A-Z].*/, '') + 'Value');
+                    slider.addEventListener('input', () => {
+                        valueSpan.textContent = slider.value;
+                    });
+                });
+            }
+
+            loadImage(file) {
+                if (!file) return;
+                
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        this.drawOriginalImage(img);
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+
+            drawOriginalImage(img) {
+                // Calculate dimensions to fit canvas while maintaining aspect ratio
+                const maxWidth = 400;
+                const maxHeight = 300;
+                let { width, height } = this.calculateDimensions(img.width, img.height, maxWidth, maxHeight);
+                
+                this.originalCanvas.width = width;
+                this.originalCanvas.height = height;
+                this.strokeCanvas.width = width;
+                this.strokeCanvas.height = height;
+                
+                this.originalCtx.drawImage(img, 0, 0, width, height);
+            }
+
+            calculateDimensions(imgWidth, imgHeight, maxWidth, maxHeight) {
+                const ratio = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
+                return {
+                    width: Math.floor(imgWidth * ratio),
+                    height: Math.floor(imgHeight * ratio)
+                };
+            }
+
+            processImage() {
+                const imageData = this.originalCtx.getImageData(0, 0, this.originalCanvas.width, this.originalCanvas.height);
+                
+                // Convert to grayscale
+                const grayData = this.toGrayscale(imageData);
+                
+                // Apply edge detection
+                const edgeThreshold = parseInt(document.getElementById('edgeThreshold').value);
+                const edges = this.detectEdges(grayData, edgeThreshold);
+                
+                // Find contours
+                const contours = this.findContours(edges);
+                
+                // Simplify contours
+                const simplification = parseInt(document.getElementById('simplification').value);
+                const minContourSize = parseInt(document.getElementById('minContour').value);
+                const simplifiedContours = this.simplifyContours(contours, simplification, minContourSize);
+                
+                // Draw strokes
+                this.drawStrokes(simplifiedContours);
+                
+                // Generate SVG
+                this.generateSVG(simplifiedContours);
+            }
+
+            toGrayscale(imageData) {
+                const data = imageData.data;
+                const grayData = new Uint8ClampedArray(imageData.width * imageData.height);
+                
+                for (let i = 0; i < data.length; i += 4) {
+                    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                    grayData[i / 4] = gray;
+                }
+                
+                return { data: grayData, width: imageData.width, height: imageData.height };
+            }
+
+            detectEdges(grayData, threshold) {
+                const { data, width, height } = grayData;
+                const edges = new Uint8ClampedArray(width * height);
+                
+                // Simple Sobel edge detection
+                for (let y = 1; y < height - 1; y++) {
+                    for (let x = 1; x < width - 1; x++) {
+                        const idx = y * width + x;
+                        
+                        // Sobel X kernel
+                        const sobelX = 
+                            -data[(y-1)*width + (x-1)] + data[(y-1)*width + (x+1)] +
+                            -2*data[y*width + (x-1)] + 2*data[y*width + (x+1)] +
+                            -data[(y+1)*width + (x-1)] + data[(y+1)*width + (x+1)];
+                        
+                        // Sobel Y kernel
+                        const sobelY = 
+                            -data[(y-1)*width + (x-1)] - 2*data[(y-1)*width + x] - data[(y-1)*width + (x+1)] +
+                            data[(y+1)*width + (x-1)] + 2*data[(y+1)*width + x] + data[(y+1)*width + (x+1)];
+                        
+                        const magnitude = Math.sqrt(sobelX * sobelX + sobelY * sobelY);
+                        edges[idx] = magnitude > threshold ? 255 : 0;
+                    }
+                }
+                
+                return { data: edges, width, height };
+            }
+
+            findContours(edges) {
+                const { data, width, height } = edges;
+                const visited = new Array(width * height).fill(false);
+                const contours = [];
+                
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        const idx = y * width + x;
+                        if (data[idx] === 255 && !visited[idx]) {
+                            const contour = this.traceContour(data, width, height, x, y, visited);
+                            if (contour.length > 10) { // Minimum contour length
+                                contours.push(contour);
+                            }
+                        }
+                    }
+                }
+                
+                return contours;
+            }
+
+            traceContour(data, width, height, startX, startY, visited) {
+                const contour = [];
+                const stack = [{ x: startX, y: startY }];
+                
+                while (stack.length > 0) {
+                    const { x, y } = stack.pop();
+                    const idx = y * width + x;
+                    
+                    if (x < 0 || x >= width || y < 0 || y >= height || visited[idx] || data[idx] !== 255) {
+                        continue;
+                    }
+                    
+                    visited[idx] = true;
+                    contour.push({ x, y });
+                    
+                    // Add 8-connected neighbors
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            if (dx === 0 && dy === 0) continue;
+                            stack.push({ x: x + dx, y: y + dy });
+                        }
+                    }
+                }
+                
+                return contour;
+            }
+
+            simplifyContours(contours, epsilon, minSize) {
+                return contours
+                    .filter(contour => contour.length >= minSize)
+                    .map(contour => this.douglasPeucker(contour, epsilon))
+                    .filter(contour => contour.length >= 3);
+            }
+
+            douglasPeucker(points, epsilon) {
+                if (points.length <= 2) return points;
+                
+                // Find the point with maximum distance from the line
+                let maxDistance = 0;
+                let maxIndex = 0;
+                const start = points[0];
+                const end = points[points.length - 1];
+                
+                for (let i = 1; i < points.length - 1; i++) {
+                    const distance = this.pointToLineDistance(points[i], start, end);
+                    if (distance > maxDistance) {
+                        maxDistance = distance;
+                        maxIndex = i;
+                    }
+                }
+                
+                if (maxDistance > epsilon) {
+                    // Recursively simplify
+                    const leftResults = this.douglasPeucker(points.slice(0, maxIndex + 1), epsilon);
+                    const rightResults = this.douglasPeucker(points.slice(maxIndex), epsilon);
+                    
+                    return leftResults.slice(0, -1).concat(rightResults);
+                } else {
+                    return [start, end];
+                }
+            }
+
+            pointToLineDistance(point, lineStart, lineEnd) {
+                const A = point.x - lineStart.x;
+                const B = point.y - lineStart.y;
+                const C = lineEnd.x - lineStart.x;
+                const D = lineEnd.y - lineStart.y;
+                
+                const dot = A * C + B * D;
+                const lenSq = C * C + D * D;
+                
+                if (lenSq === 0) return Math.sqrt(A * A + B * B);
+                
+                const param = dot / lenSq;
+                let xx, yy;
+                
+                if (param < 0) {
+                    xx = lineStart.x;
+                    yy = lineStart.y;
+                } else if (param > 1) {
+                    xx = lineEnd.x;
+                    yy = lineEnd.y;
+                } else {
+                    xx = lineStart.x + param * C;
+                    yy = lineStart.y + param * D;
+                }
+                
+                const dx = point.x - xx;
+                const dy = point.y - yy;
+                return Math.sqrt(dx * dx + dy * dy);
+            }
+
+            drawStrokes(contours) {
+                this.strokeCtx.clearRect(0, 0, this.strokeCanvas.width, this.strokeCanvas.height);
+                this.strokeCtx.fillStyle = 'white';
+                this.strokeCtx.fillRect(0, 0, this.strokeCanvas.width, this.strokeCanvas.height);
+                
+                this.strokeCtx.strokeStyle = '#333';
+                this.strokeCtx.lineWidth = 1.5;
+                this.strokeCtx.lineCap = 'round';
+                this.strokeCtx.lineJoin = 'round';
+                
+                contours.forEach(contour => {
+                    if (contour.length < 2) return;
+                    
+                    this.strokeCtx.beginPath();
+                    this.strokeCtx.moveTo(contour[0].x, contour[0].y);
+                    
+                    for (let i = 1; i < contour.length; i++) {
+                        this.strokeCtx.lineTo(contour[i].x, contour[i].y);
+                    }
+                    
+                    this.strokeCtx.stroke();
+                });
+            }
+
+            generateSVG(contours) {
+                const width = this.strokeCanvas.width;
+                const height = this.strokeCanvas.height;
+                
+                let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">`;
+                svg += `<rect width="${width}" height="${height}" fill="white"/>`;
+                
+                contours.forEach(contour => {
+                    if (contour.length < 2) return;
+                    
+                    let pathData = `M ${contour[0].x} ${contour[0].y}`;
+                    for (let i = 1; i < contour.length; i++) {
+                        pathData += ` L ${contour[i].x} ${contour[i].y}`;
+                    }
+                    
+                    svg += `<path d="${pathData}" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+                });
+                
+                svg += '</svg>';
+                
+                // Create download link
+                const blob = new Blob([svg], { type: 'image/svg+xml' });
+                const url = URL.createObjectURL(blob);
+                
+                const downloadBtn = document.getElementById('downloadBtn');
+                downloadBtn.href = url;
+                downloadBtn.download = 'plotter-strokes.svg';
+                
+                document.getElementById('downloadSection').classList.remove('hidden');
+            }
+        }
+
+        // Initialize the app
+        new ImageToPlotter();
+    </script>
+</body>
+</html>

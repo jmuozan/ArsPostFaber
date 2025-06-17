@@ -11,7 +11,7 @@ namespace crft
         public new const string AssemblyVersion = "0.1.0.0";
         public const string AssemblyFileVersion = "0.1.0.0";
         
-        public override string Name => "CRFT Tools";
+        public override string Name => "Ars Post Faber";
         
         public override Guid Id => new Guid("559c2a24-6cde-4e4d-b55c-6e9d85cf39a8");
         
