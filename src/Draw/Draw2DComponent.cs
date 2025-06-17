@@ -12,6 +12,7 @@ using System.Linq;
 using QRCoder;
 using Eto.Drawing;
 using Newtonsoft.Json;
+using System.Globalization;
 
 namespace crft
 {
@@ -41,12 +42,17 @@ namespace crft
             pManager.AddCurveParameter("Input Curves", "C", "Curves to display", GH_ParamAccess.list);
             pManager.AddNumberParameter("Bed Size X", "X", "Bed size X dimension", GH_ParamAccess.item, 100.0);
             pManager.AddNumberParameter("Bed Size Y", "Y", "Bed size Y dimension", GH_ParamAccess.item, 100.0);
+            pManager.AddNumberParameter("Lift Height", "H", "Height to lift pen for travel moves", GH_ParamAccess.item, 1.0);
+            pManager.AddNumberParameter("Z Down", "Z", "Height to lower pen for drawing", GH_ParamAccess.item, 0.0);
+            pManager.AddNumberParameter("Feed Rate", "F", "Feed rate for drawing moves (mm/min)", GH_ParamAccess.item, 1000.0);
+            pManager.AddNumberParameter("Travel Rate", "T", "Feed rate for travel moves (mm/min)", GH_ParamAccess.item, 3000.0);
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager pManager)
         {
             pManager.AddTextParameter("Server URL", "URL", "URL for drawing connection", GH_ParamAccess.item);
             pManager.AddCurveParameter("Output Curves", "C", "Input and drawn curves per submission", GH_ParamAccess.tree);
+            pManager.AddTextParameter("G-Code", "G", "Generated G-Code commands for all submissions", GH_ParamAccess.item);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -60,6 +66,11 @@ namespace crft
             double bedX = 0, bedY = 0;
             DA.GetData(2, ref bedX);
             DA.GetData(3, ref bedY);
+            double liftHeight = 1.0, zDown = 0.0, feedRate = 1000.0, travelRate = 3000.0;
+            DA.GetData(4, ref liftHeight);
+            DA.GetData(5, ref zDown);
+            DA.GetData(6, ref feedRate);
+            DA.GetData(7, ref travelRate);
 
             if (start && !_startLast)
             {
@@ -71,6 +82,7 @@ namespace crft
                 StartServer();
                 _startLast = true;
                 DA.SetData(0, GetServerUrl());
+                DA.SetData(2, string.Empty);
                 return;
             }
             if (!start && _startLast)
@@ -78,6 +90,7 @@ namespace crft
                 StopServer();
                 Reset();
                 _startLast = false;
+                DA.SetData(2, string.Empty);
                 return;
             }
             _startLast = start;
@@ -118,6 +131,44 @@ namespace crft
                 }
                 DA.SetDataTree(1, tree);
             }
+            // Generate G-Code for all submissions
+            var gcodeText = string.Empty;
+            if (_serverStarted)
+            {
+                var lines = new List<string>();
+                lines.Add("G28");
+                lines.Add("G21");
+                lines.Add("G90");
+                lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###}", liftHeight));
+                double currentZ = liftHeight;
+                foreach (var submission in _submissions)
+                {
+                    foreach (var stroke in submission.strokes)
+                    {
+                        if (stroke.Count < 1) continue;
+                        var pts = stroke.Select(p => new Point3d(p.x * _bedX, p.y * _bedY, 0)).ToList();
+                        // Pen lift if needed
+                        if (currentZ != liftHeight)
+                        {
+                            lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###}", liftHeight));
+                            currentZ = liftHeight;
+                        }
+                        var startPt = pts[0];
+                        lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 X{0:0.###} Y{1:0.###} F{2:0.###}", startPt.X, startPt.Y, travelRate));
+                        // Pen down
+                        lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###}", zDown));
+                        currentZ = zDown;
+                        foreach (var pt in pts.Skip(1))
+                        {
+                            lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 X{0:0.###} Y{1:0.###} F{2:0.###}", pt.X, pt.Y, feedRate));
+                        }
+                    }
+                }
+                // Final pen lift
+                lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###}", liftHeight));
+                gcodeText = string.Join("\n", lines);
+            }
+            DA.SetData(2, gcodeText);
         }
 
         protected override System.Drawing.Bitmap Icon => null;

@@ -49,7 +49,8 @@ namespace crft
             lines.Add("G28");
             lines.Add("G21");
             lines.Add("G90");
-            lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###} F{1:0.###}", liftHeight, travelRate));
+            // Initial pen lift (no feed rate)
+            lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###}", liftHeight));
 
             double currentZ = liftHeight;
             double currentX = 0.0, currentY = 0.0;
@@ -84,25 +85,29 @@ namespace crft
                     var start = pts[0];
                     if (currentZ != liftHeight)
                     {
-                        lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###} F{1:0.###}", liftHeight, travelRate));
+                        // Pen lift (no feed rate)
+                        lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###}", liftHeight));
                         currentZ = liftHeight;
                     }
-                    lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 X{0:0.###} Y{1:0.###} F{2:0.###}", start.X, start.Y, travelRate));
+                    // Move to start position
+                    lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 X{0:0.###} Y{1:0.###}", start.X, start.Y));
                     currentX = start.X; currentY = start.Y;
-                    lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###} F{1:0.###}", zDown, travelRate));
+                    // Pen down for drawing
+                    lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###}", zDown));
                     currentZ = zDown;
 
                     // Draw path
                     foreach (var pt in pts.Skip(1))
                     {
-                        lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 X{0:0.###} Y{1:0.###} F{2:0.###}", pt.X, pt.Y, feedRate));
+                        // Draw move (no feed rate)
+                        lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 X{0:0.###} Y{1:0.###}", pt.X, pt.Y));
                         currentX = pt.X; currentY = pt.Y;
                     }
                 }
             }
 
-            // Final pen lift
-            lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###} F{1:0.###}", liftHeight, travelRate));
+            // Final pen lift (no feed rate)
+            lines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###}", liftHeight));
             var gcodeText = string.Join("\n", lines);
             DA.SetData(0, gcodeText);
         }

@@ -258,9 +258,11 @@ namespace crft
                         _writeThread = new Thread(WriteLoop) { IsBackground = true };
                         _writeThread.Start();
                     }
-                    // Prepare for streaming: start paused, user must press ▶ to begin
-                    _paused = true;
-                    _status = $"Loaded {_printCommands.Count} commands";
+                    // Prepare for streaming: auto-start printing immediately
+                    _paused = false;
+                    // Signal write thread to start sending commands
+                    _writeEvent?.Set();
+                    _status = $"Loaded {_printCommands.Count} commands - printing started";
                     _lastEvent = _status;
                 }
                 catch (Exception ex)
@@ -516,6 +518,8 @@ namespace crft
                         _hasPreviewEdits = false;
                         _editedPreviewPoints = null;
                     }
+                    // send firmware resume command
+                    _serialPort?.WriteLine("M24");
                     // Start or resume printing from current line
                     if (_writeEvent == null) _writeEvent = new AutoResetEvent(false);
                     if (_writeThread == null)
@@ -532,6 +536,8 @@ namespace crft
                 }
                 else
                 {
+                    // send firmware pause command
+                    _serialPort?.WriteLine("M226");
                     // Pause printing after current line
                     _paused = true;
                     _status = $"Paused after line {_currentLineIndex}";
@@ -758,36 +764,36 @@ namespace crft
                 {
                     _responseLog.Add(data);
                     var trimmed = data.TrimStart();
-                    if (trimmed.StartsWith("ok", StringComparison.OrdinalIgnoreCase))
+                    var lower = trimmed.ToLowerInvariant();
+                    // Handle acknowledgements: ok, done, or echo:
+                    if (lower.StartsWith("ok") || lower.Contains("done") || trimmed.StartsWith("echo:", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Release one byte-window slot
                         lock (_windowLock)
                         {
                             if (_ackWindow.Count > 0)
                                 _ackWindow.RemoveFirst();
                         }
-                        // Signal write thread
                         _writeEvent?.Set();
-                        // Also for fallback signaling
                         _ackEvent?.Set();
                         _printerReady = true;
+                        _lastEvent = $"Received ACK: {data}";
                     }
-                    else if (trimmed.StartsWith("start", StringComparison.OrdinalIgnoreCase) || trimmed.Contains("ready", StringComparison.OrdinalIgnoreCase))
+                    else if (lower.StartsWith("start") || lower.Contains("ready"))
                     {
                         _printerReady = true;
                         _lastEvent = "Printer ready";
                     }
-                    else if (trimmed.StartsWith("error", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith("!!", StringComparison.OrdinalIgnoreCase))
+                    else if (lower.StartsWith("error") || lower.StartsWith("!!"))
                     {
                         _lastEvent = $"Printer error: {data}";
                         _printerReady = false;
                     }
-                    else if (trimmed.StartsWith("resend", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith("rs", StringComparison.OrdinalIgnoreCase))
+                    else if (lower.StartsWith("resend") || lower.StartsWith("rs"))
                     {
                         int rl = ExtractResendLineNumber(trimmed);
                         _lastEvent = $"Resend requested for line {rl}";
                     }
-                    else if (!trimmed.StartsWith("echo:busy", StringComparison.OrdinalIgnoreCase))
+                    else if (!lower.StartsWith("echo:busy"))
                     {
                         _lastEvent = $"Received: {data}";
                     }
@@ -799,6 +805,7 @@ namespace crft
         /// </summary>
         private void WriteLoop()
         {
+            System.Diagnostics.Debug.WriteLine("WriteLoop started");
             bool abort = false;
             do
             {
@@ -806,34 +813,57 @@ namespace crft
                 {
                     while (true)
                     {
+                        System.Diagnostics.Debug.WriteLine("WriteLoop waiting for signal...");
                         _writeEvent.WaitOne();
-                        while (TrySendNextLine2()) { }
+                        System.Diagnostics.Debug.WriteLine("WriteLoop signaled, sending commands...");
+                        int sentCount = 0;
+                        while (TrySendNextLine2())
+                        {
+                            sentCount++;
+                            if (sentCount >= 100)
+                            {
+                                System.Diagnostics.Debug.WriteLine("WriteLoop sent 100 commands, yielding...");
+                                Thread.Sleep(50);
+                                break;
+                            }
+                        }
+                        System.Diagnostics.Debug.WriteLine($"WriteLoop sent {sentCount} commands in batch");
                     }
                 }
                 catch (ThreadAbortException)
                 {
                     abort = true;
+                    System.Diagnostics.Debug.WriteLine("WriteLoop aborted");
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine(ex);
+                    System.Diagnostics.Debug.WriteLine($"WriteLoop error: {ex}");
                 }
             } while (!abort);
+            System.Diagnostics.Debug.WriteLine("WriteLoop ended");
         }
         /// <summary>
         /// Attempt to send one G-code line if buffer window allows
         /// </summary>
         private bool TrySendNextLine2()
         {
-            if (_paused) return false;
+            // Debug: log state
+            System.Diagnostics.Debug.WriteLine($"TrySendNextLine2: paused={_paused}, currentLine={_currentLineIndex}, totalCommands={_printCommands?.Count ?? 0}");
+            if (_paused) 
+            {
+                System.Diagnostics.Debug.WriteLine("TrySendNextLine2: paused, no send");
+                return false;
+            }
             if (_serialPort == null || !_serialPort.IsOpen) return false;
             if (_currentLineIndex >= _printCommands.Count) return false;
             int pending = 0;
             lock (_windowLock)
                 foreach (var nd in _ackWindow) pending += nd.Length;
             // On UnixSerialPort (macOS/Linux), skip buffer-window throttle if no ACKs are received
-            if (!(_serialPort is UnixSerialPort) && pending >= _receiveCacheSize) return false;
+            // throttle disabled: allow continuous streaming even without firmware ACK echo
+            // if (!(_serialPort is UnixSerialPort) && pending >= _receiveCacheSize) return false;
             var cmd = _printCommands[_currentLineIndex].Trim();
+            System.Diagnostics.Debug.WriteLine($"TrySendNextLine2: sending line {_currentLineIndex}: {cmd}");
             string outCmd = (_useLineNumbers && IsBufferedCommand(cmd))
                 ? FormatCommandWithLineNumber(cmd, _expectedLineNumber++)
                 : cmd;
