@@ -21,8 +21,9 @@ __pycache__/
 *DS_Store*
 **/.DS_Store
 
-# LLM stuff
+# Other
 KEY.txt
 .claude
 GeneratedComponents
 Repetier-Host-master
+examples/gcode

@@ -149,6 +149,7 @@ namespace crft
             string gcodeText = string.Empty;
             if (_serverStarted)
             {
+                /*
                 // On first invocation, initialize G-code buffer and draw input curves if provided
                 if (_lastProcessedSubmissionIndex == 0 && _gcodeLines.Count == 0)
                 {
@@ -177,7 +178,7 @@ namespace crft
                             _gcodeLines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###}", liftHeight));
                         }
                     }
-                }
+                }*/
                 // Append commands for new strokes only
                 for (int i = _lastProcessedSubmissionIndex; i < _submissions.Count; i++)
                 {
