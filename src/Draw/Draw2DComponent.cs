@@ -58,6 +58,7 @@ namespace crft
             pManager.AddNumberParameter("Z Down", "Z", "Height to lower pen for drawing", GH_ParamAccess.item, 0.0);
             pManager.AddNumberParameter("Feed Rate", "F", "Feed rate for drawing moves (mm/min)", GH_ParamAccess.item, 1000.0);
             pManager.AddNumberParameter("Travel Rate", "T", "Feed rate for travel moves (mm/min)", GH_ParamAccess.item, 3000.0);
+            pManager.AddNumberParameter("Max Segment Length", "R", "Maximum length (mm) of each G-code segment for path smoothing", GH_ParamAccess.item, 1.0);
             // Allow drawing without supplying input curves
             pManager[1].Optional = true;
         }
@@ -85,6 +86,9 @@ namespace crft
             DA.GetData(5, ref zDown);
             DA.GetData(6, ref feedRate);
             DA.GetData(7, ref travelRate);
+            // Maximum length per segment for path smoothing
+            double maxSegmentLength = 1.0;
+            DA.GetData(8, ref maxSegmentLength);
 
             if (start && !_startLast)
             {
@@ -149,36 +153,7 @@ namespace crft
             string gcodeText = string.Empty;
             if (_serverStarted)
             {
-                /*
-                // On first invocation, initialize G-code buffer and draw input curves if provided
-                if (_lastProcessedSubmissionIndex == 0 && _gcodeLines.Count == 0)
-                {
-                    // Startup commands
-                    _gcodeLines.Add("G28");
-                    _gcodeLines.Add("G21");
-                    _gcodeLines.Add("G90");
-                    _gcodeLines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###}", liftHeight));
-                    // Draw any input curves
-                    if (_inputCurves != null)
-                    {
-                        foreach (var c in _inputCurves)
-                        {
-                            c.DivideByCount(50, true, out var pts0);
-                            var pts3d0 = pts0.Select(p => new Point3d(p.X * _bedX, p.Y * _bedY, 0)).ToList();
-                            if (pts3d0.Count < 1) continue;
-                            // Travel to start
-                            var sp0 = pts3d0[0];
-                            _gcodeLines.Add(string.Format(CultureInfo.InvariantCulture, "G1 X{0:0.###} Y{1:0.###} F{2:0.###}", sp0.X, sp0.Y, travelRate));
-                            // Pen down
-                            _gcodeLines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###}", zDown));
-                            // Draw curve
-                            foreach (var p in pts3d0.Skip(1))
-                                _gcodeLines.Add(string.Format(CultureInfo.InvariantCulture, "G1 X{0:0.###} Y{1:0.###} F{2:0.###}", p.X, p.Y, feedRate));
-                            // Pen up at end
-                            _gcodeLines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###}", liftHeight));
-                        }
-                    }
-                }*/
+                
                 // Append commands for new strokes only
                 for (int i = _lastProcessedSubmissionIndex; i < _submissions.Count; i++)
                 {
@@ -186,14 +161,40 @@ namespace crft
                     foreach (var stroke in submission.strokes)
                     {
                         if (stroke.Count < 1) continue;
-                        var pts = stroke.Select(p => new Point3d(p.x * _bedX, p.y * _bedY, 0)).ToList();
-                        if (pts.Count < 1) continue;
+                        // Convert normalized points to machine coordinates
+                        var rawPts = stroke.Select(p => new Point3d(p.x * _bedX, p.y * _bedY, 0)).ToList();
+                        if (rawPts.Count < 1) continue;
+                        // Densify path for smoother motion
+                        // Densify path for smoother motion using user-specified max segment length
+                        double maxLen = maxSegmentLength;
+                        var pts = new List<Point3d> { rawPts[0] };
+                        for (int j = 1; j < rawPts.Count; j++)
+                        {
+                            var prev = rawPts[j - 1];
+                            var curr = rawPts[j];
+                            double dist = prev.DistanceTo(curr);
+                            if (dist > maxLen)
+                            {
+                                int segments = (int)Math.Floor(dist / maxLen);
+                                for (int k = 1; k <= segments; k++)
+                                {
+                                    double t = (double)k / (segments + 1);
+                                    pts.Add(new Point3d(
+                                        prev.X + (curr.X - prev.X) * t,
+                                        prev.Y + (curr.Y - prev.Y) * t,
+                                        0));
+                                }
+                            }
+                            pts.Add(curr);
+                        }
+                        // Ensure pen is lifted before travel
+                        _gcodeLines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###} F{1:0.###}", liftHeight, travelRate));
                         // Travel to stroke start
                         var startPt = pts[0];
                         _gcodeLines.Add(string.Format(CultureInfo.InvariantCulture, "G1 X{0:0.###} Y{1:0.###} F{2:0.###}", startPt.X, startPt.Y, travelRate));
                         // Pen down
                         _gcodeLines.Add(string.Format(CultureInfo.InvariantCulture, "G1 Z{0:0.###}", zDown));
-                        // Draw stroke
+                        // Draw stroke with finer segments
                         foreach (var pt in pts.Skip(1))
                             _gcodeLines.Add(string.Format(CultureInfo.InvariantCulture, "G1 X{0:0.###} Y{1:0.###} F{2:0.###}", pt.X, pt.Y, feedRate));
                         // Pen up at end
@@ -333,6 +334,8 @@ namespace crft
                                                 connData.baud);
                                         _serialPort.Open();
                                         _serialPort.ClearBuffers();
+                                        // Home axes on connection
+                                        _serialPort.WriteLine("G28");
                                         resp.StatusCode = 200;
                                     }
                                     catch
@@ -404,6 +407,19 @@ namespace crft
                             resp.ContentLength64 = buf.Length;
                             resp.OutputStream.Write(buf, 0, buf.Length);
                             resp.OutputStream.Close();
+                        }
+                        else if (req.HttpMethod == "POST" && req.Url.AbsolutePath == "/home")
+                        {
+                            if (_serialPort != null && _serialPort.IsOpen && !_printing)
+                            {
+                                _serialPort.WriteLine("G28");
+                                resp.StatusCode = 200;
+                            }
+                            else
+                            {
+                                resp.StatusCode = 400; // Bad request if not connected or printing
+                            }
+                            resp.Close();
                         }
                         // Serve dynamic HTML page
                         else
@@ -496,6 +512,7 @@ namespace crft
     <select id='portSelect'></select>
     <button id='connBtn'>Connect</button>
     <button id='playBtn'>Play</button>
+    <button id='homeBtn'>Home</button>
     <span id='serialStatus'>Disconnected</span>
   </div>
   <script>
@@ -740,6 +757,7 @@ namespace crft
     const connBtn = document.getElementById('connBtn');
     const playBtn = document.getElementById('playBtn');
     const serialStatus = document.getElementById('serialStatus');
+    const homeBtn = document.getElementById('homeBtn');
     let connected = false;
     let localPaused = false;
     connBtn.addEventListener('click', () => {
@@ -783,6 +801,12 @@ namespace crft
           })
           .catch(() => alert('Pause failed'));
       }
+    });
+    homeBtn.addEventListener('click', () => {
+      if (!connected) return alert('Connect first');
+      fetch('/home', { method: 'POST' })
+          .then(() => { serialStatus.textContent = 'Homing...'; })
+          .catch(() => alert('Home failed'));
     });
     function pollStatus() {
       if (localPaused) return;
