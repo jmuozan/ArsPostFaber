@@ -410,7 +410,7 @@ ArsPostFaber/
 ### Key Architecture Patterns
 
 - **Component Inheritance**: All Grasshopper components inherit from `GH_Component` or custom base classes like `GH_Component_HTTPAsync`
-- **Cross-platform Support**: Components use conditional compilation and runtime detection for Windows/macOS/Linux compatibility
+- **Cross-platform Support**: Components use conditional compilation and runtime detection for Windows/macOS compatibility
 - **Async Operations**: HTTP-based components use async/await patterns with proper cancellation support
 - **Resource Management**: External processes and network connections are properly disposed and managed
 - **Error Handling**: Comprehensive error handling with user-friendly messages and diagnostic information
@@ -464,10 +464,6 @@ ArsPostFaber/
 #### Windows
 - Visual Studio 2022 with ".NET desktop development" workload
 - Windows 10 1903+ recommended for best serial communication compatibility
-
-#### Linux
-- Install .NET 7.0 runtime and development packages
-- Serial communication requires appropriate permissions for `/dev/tty*` devices
 
 ### Dependencies and Packages
 
