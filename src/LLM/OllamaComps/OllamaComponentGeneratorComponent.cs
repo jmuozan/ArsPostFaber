@@ -14,8 +14,8 @@ using Rhino;
 using LLM.Templates;
 using Grasshopper.GUI.Canvas;
 using System.Drawing;
-using UglyToad.PdfPig;
-using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
+using PdfSharp.Pdf;
+using PdfSharp.Pdf.IO;
 
 namespace LLM.OllamaComps
 {
@@ -82,7 +82,7 @@ namespace LLM.OllamaComps
         // Stored context file reference
         private string _contextReference = string.Empty;
         public OllamaComponentMakerComponent()
-          : base("Create GH Component", "GHCreate",
+          : base("Component that Makes (Local)", "Local",
               "Generates and compiles a Grasshopper component via Ollama",
               "crft", "LLM") { }
         /// <summary>

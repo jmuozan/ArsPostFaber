@@ -14,8 +14,8 @@ using System.Threading.Tasks;
 using Rhino;
 using LLM.Templates;
 using System.Drawing;
-using UglyToad.PdfPig;
-using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
+using PdfSharp.Pdf;
+using PdfSharp.Pdf.IO;
 
 namespace LLM.OllamaComps
 {
@@ -89,7 +89,7 @@ namespace LLM.OllamaComps
         private string _userPrompt = string.Empty;
         
         public OpenAIComponentGeneratorComponent()
-          : base("Create Component (OpenAI)", "AICreate",
+          : base("Component that Makes (API)", "API",
               "Generates and compiles a Grasshopper component via OpenAI",
               "crft", "LLM") { }
         public override void AddedToDocument(GH_Document document)

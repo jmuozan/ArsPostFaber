@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	
+    <PropertyGroup>
+    <!-- Target only net7.0 (multi-targeting WindowsDesktop causes build errors on macOS) -->
+    <TargetFrameworks>net7.0</TargetFrameworks>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <TargetExt>.gha</TargetExt>
+    <NoWarn>NU1701;NETSDK1086</NoWarn>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+  
+  <PropertyGroup>
+    <!-- Specifies information for Assembly and Yak -->
+    <Version>1.0.0</Version>
+    <Title>ArsPostFaber</Title>
+    <Company>Jorge Muyo</Company>
+    <Description>Digital Fabrication Tools for Grasshopper - Drawing, Slicing, Serial Control, and Photogrammetry</Description>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <!-- Core Dependencies -->
+    <PackageReference Include="Grasshopper" Version="8.0.23304.9001" ExcludeAssets="runtime" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    
+    <!-- Serial Communication -->
+    <PackageReference Include="System.IO.Ports" Version="7.0.0" />
+    <PackageReference Include="SerialPortStream" Version="2.4.2" />
+    
+    <!-- Cross-platform UI -->
+    <PackageReference Include="Eto.Forms" Version="2.5.1" />
+    <PackageReference Include="Eto.Platform.Mac64" Version="2.5.1" />
+    
+    <!-- QR code generation -->
+    <PackageReference Include="QRCoder" Version="1.4.3" />
+    <PackageReference Include="System.Resources.Extensions" Version="7.0.0" />
+    
+    <!-- Code Analysis for LLM components -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.5.0" />
+    
+    <!-- PDF Processing -->
+    <PackageReference Include="PdfSharp" Version="6.1.1" />
+    <PackageReference Include="itext7" Version="7.2.5" />
+  </ItemGroup>
+  
+  <!-- Include photogrammetry binary in output -->
+  <ItemGroup>
+    <None Include="scripts\photogrammetry\HelloPhotogrammetry">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  
+  <!-- For Windows only builds -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('-windows')) or $(TargetFramework.StartsWith('net4'))">
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <!-- Reference WinForms for .NET 7.0 on macOS -->
+  <ItemGroup Condition="!($(TargetFramework.Contains('-windows')) or $(TargetFramework.StartsWith('net4')))">
+    <!-- Rhino 8.10 and earlier -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" ExcludeAssets="all" GeneratePathProperty="true" />
+    <Reference Include="$(PkgMicrosoft_NETFramework_ReferenceAssemblies_net48)\build\.NETFramework\v4.8\System.Windows.Forms.dll" Private="False" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>

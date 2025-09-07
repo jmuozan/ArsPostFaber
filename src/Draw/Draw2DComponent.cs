@@ -13,7 +13,6 @@ using QRCoder;
 using Eto.Drawing;
 using Newtonsoft.Json;
 using System.Globalization;
-using System.IO;
 using System.IO.Ports;
 using RJCP.IO.Ports;
 using System.Runtime.InteropServices;
@@ -241,8 +240,12 @@ namespace crft
                 return;
             }
 
-                // clear previous submissions
+                // clear previous submissions & initialize G-code buffer with homing command
                 _submissions.Clear();
+                _gcodeLines.Clear();
+                _lastProcessedSubmissionIndex = 0;
+                _currentGcodeLineIndex = 0;
+                _gcodeLines.Add("G28");
 
             _serverTask = Task.Run(() =>
             {
@@ -319,6 +322,7 @@ namespace crft
                                 var connData = JsonConvert.DeserializeObject<ConnectData>(body2);
                                 if (_serialPort != null && _serialPort.IsOpen)
                                 {
+                                    _serialPort.WriteLine("G28");
                                     resp.StatusCode = 200;
                                     resp.Close();
                                 }
