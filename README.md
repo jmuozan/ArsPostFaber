@@ -86,23 +86,21 @@ ArsPostFaber is a digital fabrication toolkit for Grasshopper that attempts to b
 
 ## Getting Started
 
-For comprehensive documentation, tutorials, and examples, visit our documentation website:
-
-**📚 [Complete Documentation](https://jmuozan.github.io/ArsPostFaber-docs/)**
+For documentation, tutorials, and examples, visit the documentation website: **📚 [Ars Post Faber docs](https://jmuozan.github.io/ArsPostFaber-docs/)**
 
 ### Prerequisites
 
 Before installing ArsPostFaber, ensure you have:
 
-* **Rhino 3D 7.0+** - The plugin is built for Rhino 7 and 8
+* **Rhino 3D 8.0+** - The plugin is built for Rhino 8
 * **Grasshopper** - Included with Rhino installation
-* **.NET 7.0 Runtime** - Required for the plugin components
-* **For AI Components**: OpenAI API key or Ollama installation for local models
-* **For Photogrammetry**: macOS device with RealityKit support (iOS/macOS)
+* **.NET 7.0 Runtime** - Required for the plugin components (in case you want to keep developimng)
+* **For AI Components**: OpenAI API keys or Ollama installation for local models
+* **For Photogrammetry**: macOS device with RealityKit support (photogrammetry component will only work on macOS)
 
 ### Installation
 
-1. Download the latest release from the [releases page](https://github.com/jmuozan/ArsPostFaber/releases)
+1. Download the latest release from the food4rhino page (currently not uploaded, you can download the .gha in this repo)
 2. Copy the `.gha` file to your Grasshopper Libraries folder:
    ```
    Windows: %APPDATA%\Grasshopper\Libraries\
@@ -111,7 +109,7 @@ Before installing ArsPostFaber, ensure you have:
 3. Restart Rhino and Grasshopper
 4. Components will appear in the "crft" tab
 
-### Quick Start
+### Quick Start Simplified Use
 
 1. **AI Component Generation**: Add a "Component that Makes" component, enter your description, and watch as custom components are generated
 2. **3D Printing**: Use the slicer pipeline components to convert geometry to G-code
@@ -129,8 +127,8 @@ Generate custom Grasshopper components using OpenAI's GPT models. Simply describ
 - **Inputs**: Description, API key, model selection, component name
 - **Outputs**: Generated code, compiled component, status messages
 - **Technical Implementation**: 
-  - Uses Microsoft.CodeAnalysis.CSharp (Roslyn compiler) for real-time compilation
-  - Implements agent mode with recursive error correction using compilation diagnostics
+  - Microsoft.CodeAnalysis.CSharp (Roslyn compiler) for real-time compilation
+  - Implements "agent" mode with recursive error correction using compilation diagnostics
   - Supports PDF context integration using iText7 for enhanced code generation
   - Cross-platform assembly loading and component instantiation
 
@@ -143,7 +141,7 @@ var compilation = CSharpCompilation.Create(assemblyName)
 ```
 
 #### Component that Makes (Local)  
-Same functionality as the API version but uses local Ollama models for offline operation.
+Same functionality as the API version but uses local Ollama local models for offline operation.
 - **Inputs**: Description, local model selection, generation parameters
 - **Outputs**: Generated code, compiled component, status messages
 - **Technical Implementation**:
@@ -264,12 +262,6 @@ var qrCode = new QRCode(qrCodeData);
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-## Roadmap
-
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 
 
 <!-- CONTRIBUTING -->
