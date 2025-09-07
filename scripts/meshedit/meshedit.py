@@ -12,7 +12,6 @@ def main():
     parser.add_argument("--bbox_max")
     args = parser.parse_args()
 
-    # Stub implementation: copy input to output
     try:
         shutil.copyfile(args.input, args.output)
     except Exception as e:

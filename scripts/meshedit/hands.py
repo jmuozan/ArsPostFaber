@@ -2,7 +2,7 @@
 import sys
 import subprocess
 
-# Auto-install dependencies if missing
+# Autoinstall missing depes
 required = ["mediapipe", "opencv-python"]
 try:
     import cv2
