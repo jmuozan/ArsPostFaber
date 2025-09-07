@@ -65,13 +65,13 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-ArsPostFaber is a comprehensive digital fabrication toolkit for Grasshopper that bridges the gap between parametric design and physical production. This plugin provides five major categories of tools for modern digital fabrication workflows:
+ArsPostFaber is a digital fabrication toolkit for Grasshopper that attempts to bridge the gap between parametric design and physical production. This plugin provides five categories of tools to implement in digital fabrication workflows:
 
-🤖 **AI-Powered Component Generation** - Create custom Grasshopper components using natural language descriptions
-🏭 **Advanced 3D Printing Pipeline** - Complete toolchain from geometry to G-code with intelligent slicing
-📡 **Professional Serial Communication** - Enterprise-grade 3D printer control and monitoring
-🔧 **Interactive Mesh Processing** - Real-time mesh editing and geometric operations  
-📱 **Mobile Photogrammetry** - 3D reconstruction from smartphone captures
+- 🤖 **AI-Powered Component Generation** - Create custom Grasshopper components using natural language descriptions
+- 🏭 **Advanced 3D Printing Pipeline** - Complete toolchain from geometry to G-code 
+- 📡 **Professional Serial Communication** - 3D printer live control and monitoring
+- 🔧 **Interactive Mesh Processing** - Realtime mesh editing 
+- 📱 **Mobile Photogrammetry** - 3D reconstruction from smartphone capture connection
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
